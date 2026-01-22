@@ -3,10 +3,10 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# 1. 페이지 설정 (압도적 UI/UX)
-st.set_page_config(page_title="지상 AI: 부동산 투자 분석", layout="wide", page_icon="🏢")
-st.title("🏢 지상 AI: 부동산 개발 타당성 & 수지분석 시스템")
-st.caption("Ver 6.0 - Investment Dashboard & ROI Simulator")
+# 1. 페이지 설정
+st.set_page_config(page_title="지상 AI Pro", layout="wide", page_icon="🏢")
+st.title("🏢 지상 AI: 부동산 개발 타당성 & 수지분석")
+st.caption("Ver 7.0 - Premium Report Generation")
 
 # 세션 초기화
 if 'analysis_result' not in st.session_state:
@@ -16,21 +16,13 @@ if 'chat_history' not in st.session_state:
 if 'metrics' not in st.session_state:
     st.session_state['metrics'] = {}
 
-# 2. 핵심 함수: 파이썬 수지분석 (Logic)
+# 2. 수지분석 로직
 def calculate_metrics(area, budget, purpose):
-    # 용도별 평당 건축비 추정 (2025년 기준, 단위: 만원)
-    cost_map = {
-        "요양원/실버타운": 850,
-        "전원주택 단지": 750,
-        "물류창고": 450,
-        "상가건물": 600
-    }
-    
+    cost_map = {"요양원/실버타운": 850, "전원주택 단지": 750, "물류창고": 450, "상가건물": 600}
     unit_cost = cost_map.get(purpose, 700)
-    est_const_cost = area * unit_cost / 10000 # 억 단위 환산
-    est_total_cost = est_const_cost * 1.2 # 설계/감리/예비비 20% 추가
-    
-    balance = budget - est_total_cost # 과부족액
+    est_const_cost = area * unit_cost / 10000 
+    est_total_cost = est_const_cost * 1.2 
+    balance = budget - est_total_cost 
     
     return {
         "unit_cost": unit_cost,
@@ -39,130 +31,144 @@ def calculate_metrics(area, budget, purpose):
         "status": "자금 여유" if balance >= 0 else "자금 부족"
     }
 
-# 3. 핵심 함수: AI 분석 (Insight) - 안전 조립식
+# 3. AI 분석 로직 (안전 조립식)
 def call_ai_model(messages, api_key):
-    base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-    model_name = "gemini-flash-latest"
-    url = f"{base_url}/{model_name}:generateContent?key={api_key}"
+    base = "https://generativelanguage.googleapis.com/v1beta/models"
+    model = "gemini-flash-latest"
+    url = f"{base}/{model}:generateContent?key={api_key}"
     
     contents = []
     for role, text in messages:
-        api_role = "user" if role == "user" else "model"
-        part = {"text": text}
-        contents.append({"role": api_role, "parts": [part]})
+        r = "user" if role == "user" else "model"
+        contents.append({"role": r, "parts": [{"text": text}]})
     
     payload = {"contents": contents}
     headers = {'Content-Type': 'application/json'}
     
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        res = requests.post(url, headers=headers, json=payload)
+        if res.status_code == 200:
+            return res.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"❌ 오류 {response.status_code}: {response.text}"
+            return f"Error {res.status_code}: {res.text}"
     except Exception as e:
-        return f"❌ 통신 오류: {str(e)}"
+        return f"Sys Error: {str(e)}"
 
-# 4. 사이드바 (입력)
+# 4. [신규] 프리미엄 리포트 HTML 생성기
+def create_html_report(addr, purp, area, bdgt, metrics, ai_text):
+    # 날짜
+    today = datetime.now().strftime("%Y년 %m월 %d일")
+    
+    # 스타일 (CSS) - 깔끔한 A4 스타일
+    html = """
+    <style>
+        .report-container { font-family: 'Malgun Gothic', sans-serif; padding: 40px; border: 1px solid #ddd; background: white; color: #333; }
+        .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; }
+        .title { font-size: 28px; font-weight: bold; color: #1E3A8A; }
+        .meta { font-size: 14px; color: #666; margin-top: 5px; }
+        .section { margin-top: 30px; margin-bottom: 20px; }
+        .section-title { font-size: 20px; font-weight: bold; border-left: 5px solid #1E3A8A; padding-left: 10px; margin-bottom: 15px; }
+        .kpi-box { display: flex; justify-content: space-between; background: #F3F4F6; padding: 20px; border-radius: 10px; }
+        .kpi-item { text-align: center; }
+        .kpi-value { font-size: 24px; font-weight: bold; color: #1E3A8A; }
+        .kpi-label { font-size: 14px; color: #555; }
+        .content { line-height: 1.6; font-size: 16px; white-space: pre-line; }
+        .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+    </style>
+    """
+    
+    # 본문 조립
+    html += f"<div class='report-container'>"
+    html += f"<div class='header'><div class='title'>부동산 개발 타당성 분석 보고서</div>"
+    html += f"<div class='meta'>분석 일자: {today} | 작성: 지상 AI 시스템</div></div>"
+    
+    # 1. 사업 개요
+    html += f"<div class='section'><div class='section-title'>1. 사업 개요</div>"
+    html += f"<ul><li><b>주소:</b> {addr}</li><li><b>용도:</b> {purp}</li>"
+    html += f"<li><b>면적:</b> {area}평</li><li><b>예산:</b> {bdgt}억 원</li></ul></div>"
+    
+    # 2. 투자 지표 (KPI)
+    html += f"<div class='section'><div class='section-title'>2. 투자 수익성 지표</div>"
+    html += f"<div class='kpi-box'>"
+    html += f"<div class='kpi-item'><div class='kpi-value'>{metrics['unit_cost']}만</div><div class='kpi-label'>평당 건축비</div></div>"
+    html += f"<div class='kpi-item'><div class='kpi-value'>{metrics['total_cost']}억</div><div class='kpi-label'>총 소요 비용</div></div>"
+    
+    # 자금 상태 색상 처리
+    color = "red" if metrics['balance'] < 0 else "green"
+    html += f"<div class='kpi-item'><div class='kpi-value' style='color:{color}'>{metrics['balance']}억</div><div class='kpi-label'>자금 과부족</div></div>"
+    html += f"</div></div>"
+    
+    # 3. AI 상세 분석
+    html += f"<div class='section'><div class='section-title'>3. 전문가 심층 분석</div>"
+    html += f"<div class='content'>{ai_text}</div></div>"
+    
+    html += f"<div class='footer'>본 보고서는 AI 분석 결과이며 법적 효력은 없습니다. | Powered by Jisang AI</div>"
+    html += "</div>"
+    
+    return html
+
+# 5. 사이드바
 with st.sidebar:
-    st.header("📝 투자 정보 입력")
-    address = st.text_input("대상지 주소", value="경기도 김포시 통진읍 도사리 163-1")
-    purpose = st.selectbox("개발 용도", ["요양원/실버타운", "전원주택 단지", "물류창고", "상가건물"])
-    area = st.number_input("건축 연면적 (평)", value=100)
-    budget = st.slider("가용 예산 (억)", 1, 100, 5)
+    st.header("📝 입력")
+    address = st.text_input("주소", value="김포시 통진읍 도사리 163-1")
+    purpose = st.selectbox("용도", ["요양원/실버타운", "전원주택 단지", "물류창고", "상가건물"])
+    area = st.number_input("면적(평)", 100)
+    budget = st.slider("예산(억)", 1, 100, 5)
     
-    st.divider()
-    
-    if st.button("🚀 원클릭 수익성 분석", type="primary"):
-        api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
-        if not api_key:
-            st.error("API 키 확인 필요")
+    if st.button("🚀 분석 실행", type="primary"):
+        key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+        if not key:
+            st.error("API 키 없음")
         else:
-            with st.spinner("💰 1차: 파이썬이 수지타산을 계산 중..."):
-                metrics = calculate_metrics(area, budget, purpose)
-                st.session_state['metrics'] = metrics
-            
-            with st.spinner("🧠 2차: AI가 입지와 리스크를 분석 중..."):
-                # 프롬프트: 파이썬 계산 결과를 AI에게 검증 요청
-                prompt = f"""
-                [사업 개요]
-                주소: {address}, 용도: {purpose}, 면적: {area}평, 예산: {budget}억
+            with st.spinner("분석 중..."):
+                # 1차 계산
+                m = calculate_metrics(area, budget, purpose)
+                st.session_state['metrics'] = m
                 
-                [1차 계산 결과]
-                평당 건축비: {metrics['unit_cost']}만원
-                총 소요 비용(예상): {metrics['total_cost']}억
-                자금 상황: {metrics['balance']}억 ({metrics['status']})
+                # 2차 AI
+                prompt = f"주소:{address}, 용도:{purpose}, 면적:{area}평, 예산:{budget}억.\n"
+                prompt += f"계산결과: 평당{m['unit_cost']}만, 총비용{m['total_cost']}억, 잔액{m['balance']}억.\n"
+                prompt += "이 정보를 바탕으로 아주 구체적인 개발 보고서를 작성해줘."
                 
-                [요청 사항]
-                위 계산 결과를 바탕으로, 부동산 디벨로퍼 관점에서 냉철한 심층 보고서를 작성해주세요.
-                1. 입지 분석 (해당 주소의 실제 지리적 특성)
-                2. 사업성 평가 (위 예산으로 현실적으로 가능한지 비평)
-                3. 리스크 및 규제 (요양원/전원주택 등 용도별 특이사항)
-                4. 결론 (추천/비추천 명시)
-                """
-                
-                result = call_ai_model([("user", prompt)], api_key)
-                st.session_state['analysis_result'] = result
-                st.session_state['chat_history'] = [("user", prompt), ("assistant", result)]
+                res = call_ai_model([("user", prompt)], key)
+                st.session_state['analysis_result'] = res
 
-# 5. 메인 대시보드 (돈이 되는 정보)
+# 6. 메인 화면
 if st.session_state['analysis_result']:
-    # (1) 경영 대시보드 (KPI)
-    st.subheader("📊 투자 타당성 대시보드")
     m = st.session_state['metrics']
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("평당 건축비 (추정)", f"{m['unit_cost']}만 원")
-    col2.metric("총 소요 예산", f"{m['total_cost']}억 원")
-    
-    # 자금 상황에 따라 색상 변경
-    balance_display = f"{m['balance']}억 원"
-    if m['balance'] >= 0:
-        col3.metric("예상 잔여금", balance_display, delta="안정")
-    else:
-        col3.metric("자금 부족액", balance_display, delta="-위험", delta_color="inverse")
-        
-    col4.metric("종합 판정", m['status'])
-    
+    # 대시보드 표시
+    st.subheader("📊 투자 타당성 대시보드")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("총 소요 예산", f"{m['total_cost']}억")
+    c2.metric("자금 과부족", f"{m['balance']}억", delta="부족" if m['balance'] < 0 else "여유")
+    c3.metric("종합 판정", m['status'])
     st.divider()
-
-    # (2) 상세 분석 탭
-    tab1, tab2, tab3 = st.tabs(["📄 AI 심층 리포트", "💬 AI 파트너 대화", "🗺️ 위치 확인"])
     
-    with tab1:
-        st.markdown(st.session_state['analysis_result'])
-        
-        # 다운로드
-        now_str = datetime.now().strftime("%Y%m%d")
-        st.download_button("📥 보고서 PDF용 저장 (.md)", st.session_state['analysis_result'], f"Report_{now_str}.md")
-
-    with tab2:
-        # 채팅 UI
-        for role, msg in st.session_state['chat_history'][2:]:
-            with st.chat_message(role):
-                st.write(msg)
-        
-        if user_input := st.chat_input("추가 질문 (예: 대출은 얼마나 나올까?)"):
-            api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
-            st.session_state['chat_history'].append(("user", user_input))
-            with st.chat_message("user"):
-                st.write(user_input)
-            
-            with st.spinner("분석 중..."):
-                response = call_ai_model(st.session_state['chat_history'], api_key)
-                st.session_state['chat_history'].append(("assistant", response))
-                with st.chat_message("assistant"):
-                    st.write(response)
-
-    with tab2: # 탭 공유 버그 방지 - 지도 탭 분리
-        pass
+    # 탭 구성
+    t1, t2 = st.tabs(["📄 프리미엄 보고서 (인쇄용)", "💬 AI 대화"])
     
-    with tab3:
-        # 지도 기능 (간단 버전)
-        st.info(f"📍 사업지: {address}")
-        # 주소 좌표 변환은 안정성을 위해 기본값 or 이전 로직 사용 권장 (여기선 UI 중심)
-        st.map(pd.DataFrame({'lat': [37.689], 'lon': [126.589]}), zoom=14)
-        st.caption("*정확한 지번 좌표 연동은 추후 업데이트됩니다.")
+    with t1:
+        st.success("✅ 분석이 완료되었습니다. 아래 보고서를 확인하세요.")
+        
+        # HTML 보고서 생성
+        html_report = create_html_report(address, purpose, area, budget, m, st.session_state['analysis_result'])
+        
+        # 화면에 렌더링 (스크롤 박스 안에)
+        st.components.v1.html(html_report, height=800, scrolling=True)
+        
+        # [팁] 인쇄 방법 안내
+        st.info("💡 **팁:** 보고서 영역에 마우스를 대고 [우클릭] -> [인쇄] -> [PDF로 저장]을 선택하면 깔끔한 PDF 파일을 얻을 수 있습니다.")
 
-elif not st.session_state['analysis_result']:
-    st.info("👈 왼쪽에서 예산과 평수를 입력하고 [원클릭 수익성 분석]을 눌러보세요.")
+    with t2:
+        for r, t in st.session_state['chat_history']:
+            if r != "system":
+                with st.chat_message(r): st.write(t)
+        
+        if q := st.chat_input("질문 입력"):
+            key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+            with st.chat_message("user"): st.write(q)
+            # 대화 맥락 유지 (이전 로그 + 새 질문)
+            msgs = st.session_state['chat_history'] + [("user", q)]
+            ans = call_ai_model(msgs, key)
+            with st.chat_message("assistant"): st.write(ans)
