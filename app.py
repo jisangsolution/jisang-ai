@@ -1,56 +1,111 @@
 import streamlit as st
 import google.generativeai as genai
+import pandas as pd
 
-st.set_page_config(page_title="Jisang AI - 진단 모드", page_icon="🩺", layout="wide")
+# --------------------------------------------------------------------------------
+# 1. 시스템 설정
+# --------------------------------------------------------------------------------
+st.set_page_config(page_title="Jisang AI - 부동산 분석", page_icon="🏗️", layout="wide")
 
-# 1. API 키 가져오기
+# API 키 로드 및 설정
 try:
     api_key = st.secrets.get("GOOGLE_API_KEY")
     if not api_key:
         st.error("⚠️ Secrets에 GOOGLE_API_KEY가 없습니다.")
         st.stop()
-    # 공백 제거 처리 (실수 방지)
-    api_key = api_key.strip()
+    api_key = api_key.strip()  # 공백 제거 안전장치
     genai.configure(api_key=api_key)
 except Exception as e:
     st.error(f"⚠️ 설정 오류: {e}")
     st.stop()
 
-def debug_connection():
-    """API 연결 상태를 정밀 진단합니다."""
-    # 2. 모델 연결 테스트
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content("Hello, AI!")
-        return True, f"✅ 성공! 응답: {response.text}"
-    except Exception as e:
-        error_msg = str(e)
-        # 에러 유형 분석
-        if "403" in error_msg:
-            return False, f"🚫 **403 권한 오류 (PERMISSION_DENIED)**:\n이 API 키는 유효하지만 사용 권한이 없습니다.\n\n[원인]\n1. 구글 클라우드 프로젝트에 결제 계정이 연결되지 않음.\n2. 'Generative AI API'가 활성화되지 않음.\n\n[상세 에러]\n{error_msg}"
-        elif "400" in error_msg:
-            return False, f"❌ **400 잘못된 요청 (INVALID_ARGUMENT)**:\nAPI 키 형식이 잘못되었습니다. 복사 과정에서 공백이 들어갔거나 키 값이 손상되었습니다.\n\n[상세 에러]\n{error_msg}"
-        elif "404" in error_msg:
-            return False, f"🔍 **404 모델 없음 (NOT_FOUND)**:\n라이브러리는 최신이지만 모델명을 찾을 수 없습니다.\n\n[상세 에러]\n{error_msg}"
-        else:
-            return False, f"⚠️ **기타 오류**: \n{error_msg}"
-
-def main():
-    st.title("🩺 지상 AI 긴급 진단 모드")
-    st.info("현재 API 키가 작동하지 않는 정확한 원인을 분석합니다.")
+# --------------------------------------------------------------------------------
+# 2. 모델 자동 탐색 로직 (Universal Model Hunter) ⭐
+# --------------------------------------------------------------------------------
+def get_working_model():
+    """
+    작동 가능한 모델을 순서대로 테스트하여 가장 좋은 모델을 반환합니다.
+    """
+    # 테스트할 모델 후보군 (최신순)
+    candidates = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-1.0-pro",
+        "gemini-pro"
+    ]
     
-    st.write(f"🔑 현재 입력된 키 확인 (앞 5자리): `{str(api_key)[:5]}...`")
+    logs = []
     
-    if st.button("🚀 진단 시작", type="primary"):
-        with st.spinner("구글 서버와 통신 중..."):
-            success, message = debug_connection()
+    for model_name in candidates:
+        try:
+            # 연결 시도
+            model = genai.GenerativeModel(model_name)
+            # 가벼운 인사로 생존 확인
+            model.generate_content("Hi")
+            return model, model_name  # 성공하면 즉시 반환
+        except Exception as e:
+            logs.append(f"{model_name} 실패: {str(e)}")
+            continue
             
-            if success:
-                st.success(message)
-                st.balloons()
-            else:
-                st.error("진단 결과: 연결 실패")
-                st.markdown(message)
+    # 모든 모델 실패 시
+    return None, logs
+
+# --------------------------------------------------------------------------------
+# 3. 분석 로직
+# --------------------------------------------------------------------------------
+def analyze_property(address):
+    # 작동하는 모델 찾기
+    model, model_info = get_working_model()
+    
+    if not model:
+        return f"""
+        ❌ **모든 AI 모델 연결 실패**
+        
+        [진단 로그]
+        {model_info}
+        
+        **해결책**: API 키가 연결된 Google Cloud 프로젝트에서 'Generative AI API'가 활성화되어 있는지 확인하거나, 새 프로젝트에서 키를 다시 발급받으세요.
+        """
+
+    prompt = f"""
+    당신은 부동산 전문가 '지상 AI'입니다.
+    주소: {address}
+    
+    이 땅이 나대지(빈 땅)라고 가정하고, 요양원이나 전원주택 개발 전략을 제안해주세요.
+    입지, 도로 조건, 건축 리스크를 포함하여 마크다운 형식으로 보고서를 작성하세요.
+    """
+
+    with st.spinner(f"🧠 연결 성공! '{model_info}' 엔진으로 분석 중..."):
+        try:
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"분석 중 오류 발생: {str(e)}"
+
+# --------------------------------------------------------------------------------
+# 4. 메인 UI
+# --------------------------------------------------------------------------------
+def main():
+    st.title("🏗️ 지상 AI 부동산 분석 시스템")
+    st.caption("Universal Compatibility Mode On")
+
+    with st.sidebar:
+        target_address = st.text_input("주소 입력", value="경기도 김포시 통진읍 도사리 163-1")
+        run_btn = st.button("🚀 분석 실행", type="primary")
+
+    if run_btn:
+        st.header(f"🚩 분석 리포트: {target_address}")
+        
+        # 지도 표시 (데모)
+        st.subheader("1. 위치 확인")
+        st.map(pd.DataFrame({'lat': [37.689], 'lon': [126.589]}), zoom=14)
+        
+        st.divider()
+        st.subheader("2. 🤖 지상 AI 개발 전략")
+        
+        # 분석 실행
+        report = analyze_property(target_address)
+        st.markdown(report)
 
 if __name__ == "__main__":
     main()
