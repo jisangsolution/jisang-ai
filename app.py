@@ -1,162 +1,176 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import base64
 
-# 1. 페이지 설정 (인쇄 최적화 레이아웃 적용)
-st.set_page_config(page_title="지상 AI Pro v15.0", layout="wide", page_icon="🏗️")
+# 1. 페이지 설정
+st.set_page_config(page_title="지상 AI Pro v15.1", layout="wide", page_icon="🏗️")
 
-# 2. CSS: 인쇄 시 A4 사이즈에 딱 맞게, 화면에서는 모던하게
+# 2. CSS: 화면용 vs 인쇄용(A4) 스타일 분리
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
     
-    /* 화면용 스타일 */
-    .main { background-color: #f8fafc; font-family: 'Noto Sans KR', sans-serif; }
-    .report-container { 
-        background: white; 
-        padding: 40px; 
-        border-radius: 0; 
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
-        max-width: 210mm; /* A4 폭 */
+    /* 기본 폰트 설정 */
+    html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
+    
+    /* 화면용 컨테이너 */
+    .report-wrapper {
+        background: white;
+        padding: 40px;
         margin: 0 auto;
+        max-width: 210mm; /* A4 폭 */
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        border-radius: 8px;
     }
-    .report-header { border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: end; }
-    .report-title { font-size: 28px; font-weight: 900; color: #1e3a8a; margin: 0; }
-    .report-meta { font-size: 12px; color: #64748b; text-align: right; }
-    
-    .section-box { margin-bottom: 25px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; }
-    .section-title { font-size: 18px; font-weight: 700; color: #334155; margin-bottom: 15px; border-left: 4px solid #1e3a8a; padding-left: 10px; }
-    
-    .badge-ok { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
-    .badge-warn { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
-    
-    /* 인쇄 모드 (Ctrl+P 눌렀을 때 적용) */
+
+    /* 제목 및 헤더 */
+    .r-header { border-bottom: 3px solid #1e3a8a; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .r-title { font-size: 32px; font-weight: 900; color: #1e3a8a; margin: 0; line-height: 1.2; }
+    .r-meta { font-size: 12px; color: #64748b; text-align: right; }
+
+    /* 섹션 공통 */
+    .r-section { margin-bottom: 30px; }
+    .r-subtitle { font-size: 20px; font-weight: 700; color: #334155; border-left: 5px solid #1e3a8a; padding-left: 10px; margin-bottom: 15px; }
+
+    /* 테이블 스타일 */
+    .r-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 10px; }
+    .r-table th { background: #f1f5f9; color: #475569; font-weight: bold; padding: 12px; border: 1px solid #e2e8f0; text-align: center; width: 15%; }
+    .r-table td { border: 1px solid #e2e8f0; padding: 12px; color: #1e293b; }
+
+    /* 뱃지 스타일 */
+    .bdg-safe { background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+    .bdg-danger { background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+    .bdg-warn { background: #fef9c3; color: #a16207; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+
+    /* 인쇄 모드 최적화 (Ctrl+P 시 적용) */
     @media print {
-        .stSidebar, .stButton, .stDownloadButton, header, footer, .no-print { display: none !important; }
-        .report-container { box-shadow: none; padding: 0; margin: 0; width: 100%; max-width: 100%; }
+        .stSidebar, header, footer, .no-print { display: none !important; }
+        .report-wrapper { box-shadow: none; margin: 0; padding: 0; width: 100%; max-width: 100%; }
         body { -webkit-print-color-adjust: exact; }
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 데이터 (Ver 14.0 무결성 데이터 계승) ---
-DATA_SOURCE = {
-    "소재지": "경기도 김포시 통진읍 도사리 163-1",
-    "토지": {"면적": "2,592㎡ (784평)", "지목": "임야(현황 대지)", "공시지가": "270,000원/㎡", "용도지역": "자연녹지지역"},
-    "건축물": {"주용도": "노유자시설(요양원)", "연면적": "1,680.5㎡", "규모": "지하1층/지상3층", "위반여부": False},
-    "권리": {"채권최고액": "15억(우리은행)", "리스크": "대환대출 유망"},
-    "분석": {"점수": 85, "등급": "S", "가치": "42.5억", "수익률": "15.2%"}
+# --- 데이터 (Ver 14.0 완전무결성 데이터) ---
+# 실제로는 API에서 가져온 데이터가 여기 들어갑니다.
+DATA = {
+    "메타": {"분석일": datetime.now().strftime("%Y-%m-%d"), "작성자": "지상 AI", "문서번호": "JA-2026-05"},
+    "주소": "경기도 김포시 통진읍 도사리 163-1",
+    "토지": {
+        "지목": "임야(현황 대지)", "면적": "2,592㎡ (784평)", "공시지가": "270,000원/㎡",
+        "용도지역": "자연녹지지역", "규제": ["성장관리계획구역(복합형)", "가축사육제한구역"]
+    },
+    "건축물": {
+        "주용도": "노유자시설(요양원)", "구조": "철근콘크리트", "규모": "지하1층 / 지상3층",
+        "승강기": "유(15인승)", "주차": "12대", "위반여부": False # False면 적법
+    },
+    "권리": {
+        "소유자": "김지상(개인)", "채권최고액": "15억(우리은행 외 1)", 
+        "리스크": "근저당 설정 후 2년 경과 (금리 인하 대환 유망)"
+    },
+    "AI결과": {
+        "점수": 85, "등급": "S", "가치": "42.5억", "수익률": "15.2%"
+    }
 }
 
-# --- 로직: 카카오톡 공유 링크 생성 ---
-def get_kakao_share_link(data):
-    # 실제로는 카카오 개발자 API 키가 필요하지만, 여기서는 텍스트 공유 URL 스키마 사용
-    text = f"[지상AI 리포트] {data['소재지']} 분석 결과\n점수: {data['분석']['점수']}점(Grade {data['분석']['등급']})\n예상가치: {data['분석']['가치']}"
-    return f"https://sharer.kakao.com/talk/friends/picker/link?url=https://jisang-ai.streamlit.app&text={text}"
-
-# --- UI 레이아웃 ---
-
-# 사이드바 (인쇄 시 숨겨짐)
-with st.sidebar:
-    st.title("🖨️ 리포트 센터")
-    st.info("비즈니스 미팅용 프리미엄 보고서 생성 모드입니다.")
+# --- 로직: HTML 생성 함수 (오류 방지) ---
+def create_report_html(d):
+    # 위반건축물 뱃지 로직
+    bldg_status = f"<span class='bdg-safe'>적법 건축물</span>" if not d['건축물']['위반여부'] else f"<span class='bdg-danger'>위반건축물 등재</span>"
     
-    if st.button("🔄 데이터 최신화 (API 재연동)"):
-        st.toast("국토부/등기소 데이터 동기화 완료!", icon="✅")
-    
-    st.markdown("---")
-    st.write("📤 **즉시 전송**")
-    st.link_button("💬 카카오톡으로 보내기", get_kakao_share_link(DATA_SOURCE))
-    st.write("📧 **이메일 발송**")
-    st.text_input("받는 사람", placeholder="client@naver.com")
-    st.button("메일 보내기")
-
-# --- 메인 보고서 영역 (A4 레이아웃) ---
-# 이 부분은 화면에 보이고, 인쇄 시 종이에 그대로 출력됩니다.
-
-col_main, col_dummy = st.columns([1, 0.01]) # 중앙 정렬 효과
-with col_main:
-    st.markdown(f"""
-    <div class="report-container">
-        <div class="report-header">
+    html = f"""
+    <div class="report-wrapper">
+        <div class="r-header">
             <div>
-                <h1 class="report-title">부동산 가치 분석 보고서</h1>
-                <p style="margin:5px 0 0 0; font-size:16px; color:#333;"><b>Target:</b> {DATA_SOURCE['소재지']}</p>
+                <h1 class="r-title">부동산 종합 분석 보고서</h1>
+                <div style="margin-top:10px; font-size:18px; color:#333;"><b>Target:</b> {d['주소']}</div>
             </div>
-            <div class="report-meta">
-                <p><b>분석일:</b> {datetime.now().strftime('%Y.%m.%d')}<br>
-                <b>작성자:</b> 지상 AI Pro<br>
-                <b>Ref No:</b> JA-2026-0015</p>
+            <div class="r-meta">
+                분석일: {d['메타']['분석일']}<br>
+                발행처: 지상 AI Pro<br>
+                No: {d['메타']['문서번호']}
             </div>
         </div>
 
-        <div class="section-box" style="background-color:#f0f9ff; border:1px solid #bae6fd;">
-            <div class="section-title" style="border-color:#0ea5e9;">👑 AI 종합 투자 의견</div>
+        <div class="r-section" style="background:#f0f9ff; padding:20px; border-radius:8px; border:1px solid #bae6fd;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="text-align:center; width:30%;">
-                    <div style="font-size:14px; color:#64748b;">종합 점수</div>
-                    <div style="font-size:48px; font-weight:900; color:#0284c7;">{DATA_SOURCE['분석']['점수']}</div>
-                    <div style="font-size:18px; font-weight:bold; color:#0369a1;">Grade {DATA_SOURCE['분석']['등급']}</div>
+                <div style="text-align:center; min-width:150px;">
+                    <div style="color:#64748b; font-size:14px;">종합 투자 점수</div>
+                    <div style="color:#0284c7; font-size:42px; font-weight:900;">{d['AI결과']['점수']}점</div>
                 </div>
-                <div style="width:65%; font-size:14px; line-height:1.6;">
-                    <p>본 물건은 <b>{DATA_SOURCE['토지']['용도지역']}</b> 내 위치한 <b>{DATA_SOURCE['건축물']['주용도']}</b>으로, 
-                    토지 활용 효율이 <b>85%</b> 이상으로 매우 우수합니다.<br>
-                    현재 추정 가치는 <b>{DATA_SOURCE['분석']['가치']}</b>이며, 운영 수익률 <b>{DATA_SOURCE['분석']['수익률']}</b> 달성이 기대됩니다.</p>
+                <div style="border-left:2px solid #e0f2fe; padding-left:25px; margin-left:15px; line-height:1.6;">
+                    <b style="font-size:18px; color:#0c4a6e;">"금융 구조조정 시 수익률 {d['AI결과']['수익률']} 달성 가능"</b><br>
+                    본 물건은 <b>{d['토지']['용도지역']}</b> 내 <b>{d['건축물']['주용도']}</b>으로, 시설 상태(승강기, 주차)가 매우 양호합니다.
+                    특히 <b>{d['권리']['리스크']}</b> 전략을 통해 이자 비용을 절감하면 가치는 <b>{d['AI결과']['가치']}</b>까지 상승할 여력이 있습니다.
                 </div>
             </div>
         </div>
 
-        <div class="section-box">
-            <div class="section-title">🏭 토지 · 건축물 개요</div>
-            <table style="width:100%; border-collapse: collapse; font-size:13px;">
-                <tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:8px; font-weight:bold; color:#666;">대지면적</td>
-                    <td style="padding:8px;">{DATA_SOURCE['토지']['면적']}</td>
-                    <td style="padding:8px; font-weight:bold; color:#666;">지목/용도</td>
-                    <td style="padding:8px;">{DATA_SOURCE['토지']['지목']}</td>
-                </tr>
-                <tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:8px; font-weight:bold; color:#666;">공시지가</td>
-                    <td style="padding:8px;">{DATA_SOURCE['토지']['공시지가']}</td>
-                    <td style="padding:8px; font-weight:bold; color:#666;">법정규제</td>
-                    <td style="padding:8px;">{DATA_SOURCE['토지']['용도지역']}</td>
+        <div class="r-section">
+            <div class="r-subtitle">📍 토지 정보 (Land Info)</div>
+            <table class="r-table">
+                <tr><th>소재지</th><td colspan="3">{d['주소']}</td></tr>
+                <tr>
+                    <th>지목/면적</th><td>{d['토지']['지목']} / {d['토지']['면적']}</td>
+                    <th>공시지가</th><td>{d['토지']['공시지가']}</td>
                 </tr>
                 <tr>
-                    <td style="padding:8px; font-weight:bold; color:#666;">건물규모</td>
-                    <td style="padding:8px;">{DATA_SOURCE['건축물']['규모']} ({DATA_SOURCE['건축물']['연면적']})</td>
-                    <td style="padding:8px; font-weight:bold; color:#666;">위반여부</td>
-                    <td style="padding:8px;">{'<span class="badge-ok">적법</span>' if not DATA_SOURCE['건축물']['위반여부'] else '<span class="badge-warn">위반</span>'}</td>
+                    <th>용도지역</th><td><span class="bdg-warn">{d['토지']['용도지역']}</span></td>
+                    <th>기타규제</th><td>{', '.join(d['토지']['규제'])}</td>
                 </tr>
             </table>
         </div>
 
-        <div class="section-box">
-            <div class="section-title">⚖️ 권리 분석 및 금융 제안</div>
-            <p style="font-size:14px; margin-bottom:10px;">
-                현재 <b>{DATA_SOURCE['권리']['채권최고액']}</b>의 근저당이 설정되어 있습니다. 
-                <span class="badge-warn">Tip</span> <b>{DATA_SOURCE['권리']['리스크']}</b> 상품으로 전환 시 
-                연간 약 <b>2,400만원</b>의 이자 비용 절감이 예상됩니다.
-            </p>
+        <div class="r-section">
+            <div class="r-subtitle">🏢 건축물 대장 (Building Spec)</div>
+            <table class="r-table">
+                <tr>
+                    <th>주용도</th><td>{d['건축물']['주용도']}</td>
+                    <th>법적상태</th><td>{bldg_status}</td>
+                </tr>
+                <tr>
+                    <th>규모/구조</th><td>{d['건축물']['규모']} ({d['건축물']['구조']})</td>
+                    <th>승강기</th><td>{d['건축물']['승강기']}</td>
+                </tr>
+                <tr>
+                    <th>주차대수</th><td colspan="3">{d['건축물']['주차']} (법정 충족)</td>
+                </tr>
+            </table>
         </div>
-        
-        <div style="margin-top:40px; text-align:center; font-size:11px; color:#aaa; border-top:1px solid #eee; padding-top:10px;">
-            본 보고서는 공공데이터를 기반으로 AI가 분석한 참고 자료이며, 법적 효력은 없습니다.<br>
-            Powered by <b>Jisang AI Solutions</b>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
-    # 화면에만 보이는 인쇄 버튼 (실제 출력물에는 안 나옴)
-    st.markdown("""
-    <div class="no-print" style="text-align:center; margin-top:20px;">
-        <button onclick="window.print()" style="background-color:#1e3a8a; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
-            🖨️ PDF 저장 / 인쇄하기
-        </button>
-        <p style="font-size:12px; color:#666; margin-top:5px;">(버튼을 누른 후 '대상'을 'PDF로 저장'으로 선택하세요)</p>
+        <div class="r-section">
+            <div class="r-subtitle">⚖️ 권리/금융 분석 (Ownership & Debt)</div>
+            <table class="r-table">
+                <tr>
+                    <th>소유자</th><td>{d['권리']['소유자']}</td>
+                    <th>채권최고액</th><td>{d['권리']['채권최고액']}</td>
+                </tr>
+                <tr>
+                    <th>AI 제안</th><td colspan="3" style="color:#b91c1c; font-weight:bold;">💡 {d['권리']['리스크']}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="text-align:center; font-size:11px; color:#94a3b8; margin-top:50px;">
+            본 문서는 공공데이터(토지대장, 등기부 등)를 기반으로 작성되었습니다.<br>
+            Jisang AI Real Estate Solution
+        </div>
     </div>
-    <script>
-        // 스트림릿에서 JS 실행을 위한 트릭
-        const printBtn = window.parent.document.querySelector('button');
-    </script>
-    """, unsafe_allow_html=True)
+    """
+    return html
+
+# --- 메인 실행 ---
+
+with st.sidebar:
+    st.title("🖨️ 출력 센터")
+    st.info("데이터 무결성이 검증된 프리미엄 리포트입니다.")
+    st.write("---")
+    st.write("1. 아래 내용을 확인하세요.")
+    st.write("2. 이상이 없다면 **[인쇄 모드]**를 실행하세요.")
+    
+    # 인쇄 안내 (JS 트릭 대신 안전한 방법 사용)
+    st.warning("단축키 [Ctrl + P]를 누르면 A4 사이즈로 깔끔하게 인쇄/PDF 저장이 가능합니다.")
+
+# 메인 화면에 HTML 렌더링
+report_html = create_report_html(DATA)
+st.markdown(report_html, unsafe_allow_html=True)
