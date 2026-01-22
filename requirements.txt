@@ -1,6 +1,3 @@
 streamlit
-google-generativeai
-plotly
-python-dotenv
-reportlab
+google-generativeai>=0.7.0
 pandas
