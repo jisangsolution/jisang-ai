@@ -3,63 +3,86 @@ import requests
 import json
 import pandas as pd
 
-# 1. 페이지 설정
-st.set_page_config(page_title="지상 AI 부동산 분석", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="지상 AI 자가진단", page_icon="🩺", layout="wide")
 
-st.title("🏗️ 지상 AI 부동산 분석 시스템")
-st.caption("시스템 상태: ✅ 구글 서버 직통 연결 (v1beta Latest)")
+st.title("🩺 지상 AI 자가 진단 및 분석 시스템")
 
-# 2. 분석 함수 (v1beta 주소 사용)
-def run_direct_analysis(address):
+# 1. API 키 준비
+api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+
+# 2. 사용 가능한 모델 목록 조회 함수 (진단용)
+def get_available_models():
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
     try:
-        # Secrets에서 키 가져오기
-        api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
-        if not api_key:
-            return "⚠️ API 키가 없습니다. Secrets 설정을 확인해주세요."
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            # 채팅/텍스트 생성이 가능한 모델만 필터링
+            models = [m['name'].replace('models/', '') for m in data.get('models', []) 
+                      if 'generateContent' in m.get('supportedGenerationMethods', [])]
+            return models
+        else:
+            return []
+    except:
+        return []
 
-        # [수정된 부분] v1 -> v1beta 로 변경 (Flash 모델 전용 주소)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
-        # 보낼 메시지 준비
+# 3. 분석 실행 함수 (자동 우회 시도)
+def run_smart_analysis(address):
+    # 시도할 모델명 우선순위 리스트
+    candidate_models = [
+        "gemini-1.5-flash-001",  # 1순위: 특정 버전 명시
+        "gemini-1.5-flash-latest", # 2순위: 최신 버전 별칭
+        "gemini-1.5-flash",      # 3순위: 일반 별칭
+        "gemini-pro"             # 4순위: 구형 안정 버전
+    ]
+    
+    # 사용 가능한 모델 조회
+    available_models = get_available_models()
+    
+    # 사용 가능한 것 중 가장 좋은 것 선택
+    valid_model = None
+    for model in candidate_models:
+        if model in available_models:
+            valid_model = model
+            break
+            
+    # 만약 매칭되는 게 없으면 목록의 첫 번째 것 사용
+    if not valid_model and available_models:
+        valid_model = available_models[0]
+    
+    if not valid_model:
+        return f"❌ 오류: 사용할 수 있는 AI 모델이 없습니다.\n(검색된 모델 목록: {available_models})"
+
+    # 선택된 모델로 분석 시도
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{valid_model}:generateContent?key={api_key}"
         headers = {'Content-Type': 'application/json'}
         payload = {
             "contents": [{
-                "parts": [{"text": f"당신은 20년 경력의 부동산 디벨로퍼입니다. 주소: '{address}' 이 땅에 요양원이나 전원주택을 지을 때의 사업성, 인허가 리스크, 추천 전략을 상세한 보고서 형태로 작성해주세요."}]
+                "parts": [{"text": f"부동산 전문가로서 '{address}' 부지의 요양원/전원주택 개발 전략을 상세히 보고서로 작성해줘."}]
             }]
         }
         
-        # 전송
         response = requests.post(url, headers=headers, json=payload)
         
-        # 결과 처리
         if response.status_code == 200:
-            data = response.json()
-            return data['candidates'][0]['content']['parts'][0]['text']
+            return f"✅ **연결 성공! (사용 모델: {valid_model})**\n\n" + response.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"❌ 구글 서버 응답 오류 ({response.status_code}):\n{response.text}"
+            return f"❌ 서버 응답 오류 ({valid_model}): {response.text}"
             
     except Exception as e:
-        return f"❌ 통신 오류 발생: {str(e)}"
+        return f"❌ 통신 오류: {str(e)}"
 
-# 3. 화면 구성
+# 4. 화면 UI
 with st.sidebar:
     st.header("📍 분석 대상")
-    address = st.text_input("주소 입력", value="경기도 김포시 통진읍 도사리 163-1")
+    address = st.text_input("주소", value="경기도 김포시 통진읍 도사리 163-1")
     if st.button("🚀 분석 실행", type="primary"):
         st.session_state['run'] = True
 
-# 4. 결과 출력
 if st.session_state.get('run'):
     st.divider()
-    st.subheader(f"📄 분석 보고서: {address}")
-    
-    st.map(pd.DataFrame({'lat': [37.689], 'lon': [126.589]}), zoom=13)
-    
-    with st.spinner("🤖 지상 AI가 v1beta 고속 도로를 통해 데이터를 가져오는 중입니다..."):
-        result = run_direct_analysis(address)
-        
+    with st.spinner("🤖 사용 가능한 AI 모델을 검색하고 분석 중입니다..."):
+        result = run_smart_analysis(address)
         if "❌" in result:
-            st.error(result)
-        else:
-            st.success("분석 완료!")
-            st.markdown(result)
+            st.
