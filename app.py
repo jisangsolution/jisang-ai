@@ -9,7 +9,7 @@ from datetime import datetime
 # 1. 페이지 설정
 st.set_page_config(page_title="지상 AI Pro", layout="wide", page_icon="🏢")
 st.title("🏢 지상 AI: 부동산 개발 타당성 & Deal Sourcing")
-st.caption("Ver 9.0 - Bulk Analysis & Ranking System")
+st.caption("Ver 9.1 - Bulk Analysis Parsing Fixed")
 
 # 세션 초기화
 if 'analysis_result' not in st.session_state: st.session_state['analysis_result'] = None
@@ -22,7 +22,6 @@ if 'bulk_results' not in st.session_state: st.session_state['bulk_results'] = No
 
 def calculate_metrics(area, budget, purpose):
     cost_map = {"요양원": 850, "전원주택": 750, "물류창고": 450, "상가": 600}
-    # 매핑되지 않은 용도는 기본값 700
     unit_cost = cost_map.get(purpose.split('/')[0], 700) 
     est_const_cost = area * unit_cost / 10000 
     est_total_cost = est_const_cost * 1.2 
@@ -35,7 +34,7 @@ def calculate_metrics(area, budget, purpose):
     }
 
 def call_ai_model(messages, api_key):
-    base = "https://generativelanguage.googleapis.com/v1beta/models"
+    base = "[https://generativelanguage.googleapis.com/v1beta/models](https://generativelanguage.googleapis.com/v1beta/models)"
     model = "gemini-flash-latest"
     url = f"{base}/{model}:generateContent?key={api_key}"
     contents = []
@@ -53,23 +52,45 @@ def call_ai_model(messages, api_key):
     except:
         return None
 
+# [핵심 개선] 무적 파싱 함수 (JSON 형식을 안 지켜도 찾아냄)
 def extract_data(full_text):
     default_scores = {"입지": 0, "수요": 0, "수익성": 0, "안정성": 0, "총점": 0}
     if not full_text: return default_scores, ""
     
     try:
+        # 1차 시도: 표준 JSON 블록 (```json ... ```) 찾기
         json_match = re.search(r"```json\s*({.*?})\s*```", full_text, re.DOTALL)
+        
+        if not json_match:
+            # 2차 시도: 그냥 중괄호 { ... } 덩어리 찾기 (AI가 포맷 까먹었을 때 대비)
+            json_match = re.search(r"({.*\"총점\".*})", full_text, re.DOTALL)
+            
         if json_match:
-            scores = json.loads(json_match.group(1))
-            html_content = re.sub(r"```json.*?```", "", full_text, flags=re.DOTALL).strip()
+            json_str = json_match.group(1)
+            scores = json.loads(json_str)
+            
+            # HTML 추출 (JSON 제외한 나머지)
+            html_content = re.sub(r"```json.*?```", "", full_text, flags=re.DOTALL)
+            html_content = re.sub(r"{.*\"총점\".*}", "", html_content, flags=re.DOTALL).strip()
+            
             return scores, html_content
         else:
+            # 3차 시도: 텍스트에서 숫자 강제 추출 (최후의 수단)
+            if "총점" in full_text:
+                lines = full_text.split('\n')
+                total_score = 0
+                for line in lines:
+                    if "총점" in line:
+                        nums = re.findall(r'\d+', line)
+                        if nums: total_score = int(nums[-1])
+                default_scores['총점'] = total_score
+                return default_scores, full_text
+            
             return default_scores, full_text
     except:
         return default_scores, full_text
 
 def create_html_report(addr, purp, area, bdgt, metrics, ai_text, scores):
-    # (이전 버전과 동일한 HTML 생성 로직 - 간소화하여 포함)
     ai_text = ai_text.replace("```html", "").replace("```", "")
     html = f"""
     <div style='font-family:Malgun Gothic; padding:30px; border:1px solid #ddd; background:white;'>
@@ -111,6 +132,7 @@ with st.sidebar:
                 m = calculate_metrics(area, budget, purpose)
                 st.session_state['metrics'] = m
                 
+                # 단일 분석 프롬프트 (엄격)
                 prompt = f"""
                 주소:{address}, 용도:{purpose}, 면적:{area}평, 예산:{budget}억.
                 (계산: 비용{m['total_cost']}억, 잔액{m['balance']}억)
@@ -127,9 +149,7 @@ with st.sidebar:
 
     else: # 대량 분석 모드
         st.subheader("📂 엑셀 업로드")
-        st.info("엑셀 파일에 '주소', '용도', '면적', '예산' 컬럼이 있어야 합니다.")
         
-        # 샘플 데이터 생성 버튼
         if st.button("기본 샘플 데이터 사용하기"):
             sample_data = pd.DataFrame({
                 '주소': ['김포시 통진읍 도사리 163-1', '파주시 탄현면 성동리 100', '강화군 화도면 상방리 55'],
@@ -155,16 +175,31 @@ with st.sidebar:
                 for idx, row in df.iterrows():
                     with st.spinner(f"{idx+1}/{len(df)} 분석 중: {row['주소']}..."):
                         m = calculate_metrics(row['면적'], row['예산'], row['용도'])
+                        
+                        # [개선] 대량 분석 프롬프트 강화
                         prompt = f"""
-                        간단 분석 요청. 주소:{row['주소']}, 용도:{row['용도']}, 예산:{row['예산']}억.
-                        (비용{m['total_cost']}억).
-                        [형식] ```json {{ "입지":00, "수요":00, "수익성":00, "안정성":00, "총점":00 }} ```
+                        역할: 부동산 심사역.
+                        정보: 주소:{row['주소']}, 용도:{row['용도']}, 예산:{row['예산']}억.
+                        수지분석결과: 예상비용{m['total_cost']}억, 자금상태:{m['status']}.
+                        
+                        [필수 요청사항]
+                        위 정보를 바탕으로 해당 토지의 투자 매력도를 0~100점으로 평가하여
+                        반드시 아래 JSON 형식으로만 답변하세요. (설명 불필요)
+                        ```json
+                        {{
+                            "입지": 점수,
+                            "수요": 점수,
+                            "수익성": 점수,
+                            "안정성": 점수,
+                            "총점": 점수
+                        }}
+                        ```
                         """
                         res = call_ai_model([("user", prompt)], api_key)
                         score = 0
                         grade = "F"
                         if res:
-                            s, _ = extract_data(res)
+                            s, _ = extract_data(res) # 개선된 파서 사용
                             score = s.get('총점', 0)
                             grade = "S" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C"
                         
@@ -176,7 +211,7 @@ with st.sidebar:
                             "예상비용": f"{m['total_cost']}억",
                             "자금상태": m['status']
                         })
-                        time.sleep(1) # API 제한 방지
+                        time.sleep(1) 
                         progress_bar.progress((idx + 1) / len(df))
                 
                 st.session_state['bulk_results'] = pd.DataFrame(results).sort_values(by="총점", ascending=False)
@@ -189,7 +224,6 @@ if mode == "단일 분석 (Single)":
         s = st.session_state['scores']
         st.subheader(f"🏆 투자 매력도: {s.get('총점', 0)}점")
         
-        # 차트
         c1, c2 = st.columns([1, 3])
         with c1:
             grade = "S" if s.get('총점',0)>=90 else "A" if s.get('총점',0)>=80 else "B" if s.get('총점',0)>=70 else "C"
@@ -204,7 +238,6 @@ if mode == "단일 분석 (Single)":
             html = create_html_report(address, purpose, area, budget, st.session_state['metrics'], st.session_state['analysis_result'], s)
             st.components.v1.html(html, height=800, scrolling=True)
         with t2:
-            # 대화 기능 유지
             for r, t in st.session_state['chat_history']:
                 if r != "system":
                     with st.chat_message(r): st.write(t)
@@ -220,13 +253,13 @@ else: # 대량 분석 모드 결과 화면
         st.divider()
         st.subheader("🥇 Deal Sourcing 랭킹 (Top Picks)")
         
-        # 1등 강조
-        top_pick = st.session_state['bulk_results'].iloc[0]
-        st.info(f"👑 **최고 추천 투자처:** {top_pick['주소']} ({top_pick['용도']}) - **{top_pick['총점']}점 (Grade {top_pick['등급']})**")
-        
-        # 전체 데이터 테이블
-        st.dataframe(st.session_state['bulk_results'], use_container_width=True)
-        
-        # 다운로드
-        csv = st.session_state['bulk_results'].to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 랭킹 리포트 다운로드 (CSV)", csv, "investment_ranking.csv", "text/csv")
+        if not st.session_state['bulk_results'].empty:
+            top_pick = st.session_state['bulk_results'].iloc[0]
+            st.info(f"👑 **최고 추천 투자처:** {top_pick['주소']} ({top_pick['용도']}) - **{top_pick['총점']}점 (Grade {top_pick['등급']})**")
+            
+            st.dataframe(st.session_state['bulk_results'], use_container_width=True)
+            
+            csv = st.session_state['bulk_results'].to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 랭킹 리포트 다운로드 (CSV)", csv, "investment_ranking.csv", "text/csv")
+        else:
+            st.warning("분석 결과가 없습니다.")
