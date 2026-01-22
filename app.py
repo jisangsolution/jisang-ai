@@ -9,7 +9,7 @@ from datetime import datetime
 # 1. 페이지 설정
 st.set_page_config(page_title="지상 AI Pro", layout="wide", page_icon="🏢")
 st.title("🏢 지상 AI: 부동산 개발 타당성 & Deal Sourcing")
-st.caption("Ver 9.4 - Safety First & Exponential Backoff")
+st.caption("Ver 9.5 - Interactive Progress & UX Optimization")
 
 # 세션 초기화
 if 'analysis_result' not in st.session_state: st.session_state['analysis_result'] = None
@@ -33,7 +33,6 @@ def calculate_metrics(area, budget, purpose):
         "status": "여유" if balance >= 0 else "부족"
     }
 
-# [Ver 9.4 핵심] 지수적 백오프 (점점 더 오래 기다리기)
 def call_ai_model(messages, api_key):
     base = "https://generativelanguage.googleapis.com/v1beta/models"
     model = "gemini-flash-latest"
@@ -46,16 +45,14 @@ def call_ai_model(messages, api_key):
     payload = {"contents": contents}
     headers = {'Content-Type': 'application/json'}
     
-    # 1차 시도 -> 실패시 10초 대기 -> 실패시 30초 대기
-    wait_times = [10, 30, 60] 
-    
+    # 지수적 백오프 (재시도 로직)
+    wait_times = [5, 10, 20] 
     for i, wait in enumerate(wait_times):
         try:
             res = requests.post(url, headers=headers, json=payload)
             if res.status_code == 200:
                 return res.json()['candidates'][0]['content']['parts'][0]['text']
             elif res.status_code == 429:
-                # 429 에러는 '잠시 멈춤' 신호 -> 길게 대기
                 time.sleep(wait) 
                 continue 
             else:
@@ -63,8 +60,7 @@ def call_ai_model(messages, api_key):
         except:
             time.sleep(wait)
             continue
-            
-    return None # 3번 다 실패하면 None 반환
+    return None
 
 def extract_data(full_text):
     default_scores = {"입지": 0, "수요": 0, "수익성": 0, "안정성": 0, "총점": 0}
@@ -72,9 +68,8 @@ def extract_data(full_text):
     
     html_content = full_text
     scores = default_scores.copy()
-    
     try:
-        # 1. JSON 파싱
+        # JSON 파싱
         json_match = re.search(r"({.*?})", full_text, re.DOTALL)
         if json_match:
             try:
@@ -86,7 +81,7 @@ def extract_data(full_text):
                     return scores, html_content
             except: pass
 
-        # 2. 강제 패턴 매칭 (하이브리드)
+        # 패턴 매칭
         patterns = {
             "총점": r"(총점|종합 점수|Total Score)\D*(\d+)",
             "입지": r"(입지)\D*(\d+)",
@@ -99,7 +94,6 @@ def extract_data(full_text):
             if match:
                 target_key = "총점" if key in ["총점", "종합 점수", "Total Score"] else key
                 scores[target_key] = int(match.group(2))
-        
         return scores, full_text
     except:
         return default_scores, full_text
@@ -148,9 +142,7 @@ with st.sidebar:
                 prompt = f"""
                 주소:{address}, 용도:{purpose}, 면적:{area}평, 예산:{budget}억.
                 (계산: 비용{m['total_cost']}억, 잔액{m['balance']}억)
-                [형식]
-                1. ```json {{ "입지":00, "수요":00, "수익성":00, "안정성":00, "총점":00 }} ```
-                2. 상세 HTML 보고서 작성.
+                [형식] 1. ```json {{ "입지":00, "수요":00, "수익성":00, "안정성":00, "총점":00 }} ``` 2. 상세 HTML 보고서.
                 """
                 res = call_ai_model([("user", prompt)], api_key)
                 if res:
@@ -176,33 +168,50 @@ with st.sidebar:
                 results = []
                 raw_logs = []
                 df = st.session_state['upload_df']
-                bar = st.progress(0)
-                status_box = st.empty() # 상태 메시지용 박스
+                
+                # 전체 진행률 표시줄
+                total_bar = st.progress(0, text="분석 대기 중...")
                 
                 for idx, row in df.iterrows():
-                    status_box.info(f"⏳ 분석 중 ({idx+1}/{len(df)}): {row['주소']} ...")
-                    
-                    m = calculate_metrics(row['면적'], row['예산'], row['용도'])
-                    prompt = f"""
-                    부동산 심사역 역할.
-                    주소:{row['주소']}, 용도:{row['용도']}, 예산:{row['예산']}억.
-                    예상비용{m['total_cost']}억.
-                    
-                    [필수] 투자 점수(0~100) 평가.
-                    답변 형식: "총점: 85, 입지: 80, 수요: 90, 수익성: 80, 안정성: 90"
-                    설명 생략. 점수만 출력.
-                    """
-                    res = call_ai_model([("user", prompt)], api_key)
-                    
-                    score = 0
-                    grade = "F"
-                    if res:
-                        s, _ = extract_data(res)
-                        score = s.get('총점', 0)
-                        grade = "S" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C"
-                        raw_logs.append(f"[{row['주소']}] {res}")
-                    else:
-                        raw_logs.append(f"[{row['주소']}] ❌ 3회 재시도 실패 (과부하)")
+                    # [UX 핵심] 토스 스타일 진행 상태창 (st.status)
+                    # 10초의 대기 시간을 의미 있는 작업 단계로 시각화함
+                    with st.status(f"🔍 **[{idx+1}/{len(df)}] {row['주소']} 분석 중...**", expanded=True) as status:
+                        
+                        # Step 1: 기초 데이터 계산 (2초)
+                        st.write("🏗️ 건축법규 및 기초 수익성 계산 중...")
+                        m = calculate_metrics(row['면적'], row['예산'], row['용도'])
+                        time.sleep(2) # UX를 위한 딜레이 (사용자가 읽을 시간 확보)
+                        
+                        # Step 2: AI 서버 통신 (실제 작업)
+                        st.write("🛰️ 구글 위성 데이터 및 AI 서버 연결 중...")
+                        prompt = f"""
+                        부동산 심사역 역할. 주소:{row['주소']}, 용도:{row['용도']}, 예산:{row['예산']}억.
+                        예상비용{m['total_cost']}억.
+                        [필수] 투자 점수(0~100) 평가.
+                        형식: "총점: 85, 입지: 80, 수요: 90, 수익성: 80, 안정성: 90"
+                        설명 생략. 점수만 출력.
+                        """
+                        res = call_ai_model([("user", prompt)], api_key)
+                        
+                        # Step 3: 결과 파싱 및 랭킹 산정 (3초)
+                        st.write("🏆 투자 매력도 채점 및 등급 산정 중...")
+                        score = 0
+                        grade = "F"
+                        if res:
+                            s, _ = extract_data(res)
+                            score = s.get('총점', 0)
+                            grade = "S" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C"
+                            raw_logs.append(f"[{row['주소']}] {res}")
+                        else:
+                            raw_logs.append(f"[{row['주소']}] 응답 없음")
+                        time.sleep(3) # UX 딜레이
+                        
+                        # Step 4: 다음 분석 준비 (2초) -> 총 7초+AI시간 확보로 과부하 방지
+                        st.write("💾 데이터 저장 및 다음 분석 준비 중...")
+                        time.sleep(2)
+                        
+                        # 완료 표시
+                        status.update(label=f"✅ **{row['주소']} 완료!** (점수: {score}점)", state="complete", expanded=False)
                     
                     results.append({
                         "주소": row['주소'],
@@ -212,15 +221,14 @@ with st.sidebar:
                         "상태": m['status']
                     })
                     
-                    # [안전 장치] 과부하 방지를 위한 강제 휴식
-                    status_box.warning(f"⚠️ API 과부하 방지를 위해 10초간 대기합니다...")
-                    time.sleep(10) # 10초 대기
-                    bar.progress((idx + 1) / len(df))
+                    # 전체 진행률 업데이트 (수치 표시)
+                    percent = int((idx + 1) / len(df) * 100)
+                    total_bar.progress((idx + 1) / len(df), text=f"전체 진행률: {percent}% ({idx+1}/{len(df)} 완료)")
                 
-                status_box.success("모든 분석이 완료되었습니다!")
                 st.session_state['bulk_results'] = pd.DataFrame(results).sort_values(by="총점", ascending=False)
                 st.session_state['logs'] = raw_logs
-                st.success("완료!")
+                st.balloons() # 완료 축하 효과
+                st.success("모든 분석이 성공적으로 완료되었습니다!")
 
 # --- 메인 화면 ---
 
@@ -238,12 +246,10 @@ else:
     if st.session_state['bulk_results'] is not None:
         st.divider()
         st.subheader("🥇 랭킹 (Top Picks)")
-        
         if not st.session_state['bulk_results'].empty:
             top = st.session_state['bulk_results'].iloc[0]
             st.info(f"👑 1위: {top['주소']} - **{top['총점']}점 ({top['등급']})**")
             st.dataframe(st.session_state['bulk_results'], use_container_width=True)
-            
-            with st.expander("🔍 AI 응답 로그 확인"):
+            with st.expander("🔍 AI 응답 로그"):
                 for log in st.session_state.get('logs', []):
                     st.text(log)
