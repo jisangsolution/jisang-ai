@@ -7,9 +7,9 @@ import pandas as pd
 st.set_page_config(page_title="지상 AI 부동산 분석", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ 지상 AI 부동산 분석 시스템")
-st.caption("시스템 상태: ✅ 구글 서버 직통 연결 (v1 Stable)")
+st.caption("시스템 상태: ✅ 구글 서버 직통 연결 (v1beta Latest)")
 
-# 2. 분석 함수 (라이브러리 없이 직접 통신)
+# 2. 분석 함수 (v1beta 주소 사용)
 def run_direct_analysis(address):
     try:
         # Secrets에서 키 가져오기
@@ -17,8 +17,8 @@ def run_direct_analysis(address):
         if not api_key:
             return "⚠️ API 키가 없습니다. Secrets 설정을 확인해주세요."
 
-        # 구글 Gemini 1.5 Flash 공식 주소 (v1 Stable 버전)
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+        # [수정된 부분] v1 -> v1beta 로 변경 (Flash 모델 전용 주소)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         
         # 보낼 메시지 준비
         headers = {'Content-Type': 'application/json'}
@@ -28,7 +28,7 @@ def run_direct_analysis(address):
             }]
         }
         
-        # 전송 (requests 사용)
+        # 전송
         response = requests.post(url, headers=headers, json=payload)
         
         # 결과 처리
@@ -53,10 +53,9 @@ if st.session_state.get('run'):
     st.divider()
     st.subheader(f"📄 분석 보고서: {address}")
     
-    # 지도 표시 (위치 시각화)
     st.map(pd.DataFrame({'lat': [37.689], 'lon': [126.589]}), zoom=13)
     
-    with st.spinner("🤖 지상 AI가 구글 본사 서버에서 데이터를 받아오는 중입니다..."):
+    with st.spinner("🤖 지상 AI가 v1beta 고속 도로를 통해 데이터를 가져오는 중입니다..."):
         result = run_direct_analysis(address)
         
         if "❌" in result:
@@ -64,4 +63,3 @@ if st.session_state.get('run'):
         else:
             st.success("분석 완료!")
             st.markdown(result)
-            st.download_button("📥 보고서 다운로드", result, file_name="부동산_분석_보고서.txt")
