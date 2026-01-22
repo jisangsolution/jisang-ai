@@ -7,26 +7,17 @@ from datetime import datetime
 st.set_page_config(page_title="지상 AI Pro", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ 지상 AI 부동산 개발 타당성 분석")
-st.caption("Ver 4.1 - Report Download & UI Tabs")
+st.caption("Ver 4.2 - Result Preservation & Multi-Download")
 
-# 2. 사이드바: 상세 입력
-with st.sidebar:
-    st.header("📝 사업 개요 입력")
-    
-    address = st.text_input("대상지 주소", value="경기도 김포시 통진읍 도사리 163-1")
-    
-    purpose = st.selectbox(
-        "개발 희망 용도", 
-        ["요양원/실버타운", "전원주택 단지", "물류창고", "근린생활시설(상가)", "스마트팜"]
-    )
-    
-    area = st.number_input("토지 면적 (평)", min_value=10, value=100, step=10)
-    budget = st.slider("가용 예산 (건축비 포함)", 1, 50, 5, format="%d억 원")
-    
-    st.divider()
-    run_btn = st.button("🚀 상세 분석 실행", type="primary")
+# [핵심] 분석 결과를 기억하기 위한 저장소(Session State) 초기화
+if 'analysis_result' not in st.session_state:
+    st.session_state['analysis_result'] = None
+if 'addr' not in st.session_state:
+    st.session_state['addr'] = ""
+if 'purpose' not in st.session_state:
+    st.session_state['purpose'] = ""
 
-# 3. 분석 함수
+# 2. 분석 함수
 def run_analysis(addr, purp, area, bdgt, api_key):
     model_name = "gemini-flash-latest"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -65,29 +56,65 @@ def run_analysis(addr, purp, area, bdgt, api_key):
     except Exception as e:
         return f"❌ 시스템 오류: {str(e)}"
 
-# 4. 결과 처리 및 다운로드
-if run_btn:
-    api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+# 3. 사이드바 UI
+with st.sidebar:
+    st.header("📝 사업 개요 입력")
     
-    if not api_key:
-        st.error("⚠️ API 키가 없습니다.")
-    else:
+    address = st.text_input("대상지 주소", value="경기도 김포시 통진읍 도사리 163-1")
+    
+    purpose = st.selectbox(
+        "개발 희망 용도", 
+        ["요양원/실버타운", "전원주택 단지", "물류창고", "근린생활시설(상가)", "스마트팜"]
+    )
+    
+    area = st.number_input("토지 면적 (평)", min_value=10, value=100, step=10)
+    budget = st.slider("가용 예산 (건축비 포함)", 1, 50, 5, format="%d억 원")
+    
+    st.divider()
+    
+    # 실행 버튼
+    if st.button("🚀 상세 분석 실행", type="primary"):
+        api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+        if not api_key:
+            st.error("⚠️ API 키가 없습니다.")
+        else:
+            with st.spinner(f"🤖 AI가 '{purpose}' 타당성을 분석 중입니다..."):
+                # 분석 실행 및 결과 저장
+                result_text = run_analysis(address, purpose, area, budget, api_key)
+                st.session_state['analysis_result'] = result_text
+                st.session_state['addr'] = address
+                st.session_state['purpose'] = purpose
+
+    # [사이드바 다운로드 버튼] 결과가 있을 때만 표시
+    if st.session_state['analysis_result'] and "❌" not in st.session_state['analysis_result']:
         st.divider()
+        st.success("✅ 분석 완료")
         
-        # 탭 구성 (UI 깔끔하게 정리)
-        tab1, tab2 = st.tabs(["📊 분석 결과 보고서", "🗺️ 지도 확인"])
+        now_str = datetime.now().strftime("%Y%m%d_%H%M")
+        file_name_side = f"지상AI_보고서_{now_str}.md"
         
-        with st.spinner("🤖 AI가 보고서를 작성 중입니다..."):
-            result_text = run_analysis(address, purpose, area, budget, api_key)
-            
-            # 탭 1: 보고서 및 다운로드
-            with tab1:
-                if "❌" in result_text:
-                    st.error(result_text)
-                else:
-                    st.markdown(result_text)
-                    st.divider()
-                    
-                    # [핵심] 다운로드 버튼
-                    # 현재 시간으로 파일명 생성
-                    now_str = datetime.now().strftime("%Y%m%d_%H%M")
+        st.download_button(
+            label="📥 보고서 다운로드 (사이드바)",
+            data=st.session_state['analysis_result'],
+            file_name=file_name_side,
+            mime="text/markdown"
+        )
+
+# 4. 메인 결과 화면 (저장된 상태가 있으면 표시)
+if st.session_state['analysis_result']:
+    st.divider()
+    
+    # 탭 구성
+    tab1, tab2 = st.tabs(["📊 분석 결과 보고서", "🗺️ 지도 확인"])
+    
+    # 탭 1: 보고서
+    with tab1:
+        # [메인 상단 다운로드 버튼] - 눈에 잘 띄게 배치
+        now_str = datetime.now().strftime("%Y%m%d_%H%M")
+        file_name_main = f"부동산분석_{st.session_state['purpose']}_{now_str}.md"
+        
+        col_down1, col_down2 = st.columns([1, 4])
+        with col_down1:
+            st.download_button(
+                label="📥 파일로 저장하기",
+                data=st.session
