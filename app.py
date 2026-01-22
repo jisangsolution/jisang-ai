@@ -6,7 +6,7 @@ from datetime import datetime
 # 1. 페이지 설정
 st.set_page_config(page_title="지상 AI Pro", layout="wide", page_icon="🏢")
 st.title("🏢 지상 AI: 부동산 개발 타당성 & 수지분석")
-st.caption("Ver 7.0 - Premium Report Generation")
+st.caption("Ver 7.1 - Format Fixed & Table Design")
 
 # 세션 초기화
 if 'analysis_result' not in st.session_state:
@@ -54,56 +54,58 @@ def call_ai_model(messages, api_key):
     except Exception as e:
         return f"Sys Error: {str(e)}"
 
-# 4. [신규] 프리미엄 리포트 HTML 생성기
+# 4. [수정] 프리미엄 리포트 생성기 (표 디자인 추가)
 def create_html_report(addr, purp, area, bdgt, metrics, ai_text):
-    # 날짜
     today = datetime.now().strftime("%Y년 %m월 %d일")
     
-    # 스타일 (CSS) - 깔끔한 A4 스타일
+    # CSS 스타일 강화 (표 디자인 추가)
     html = """
     <style>
         .report-container { font-family: 'Malgun Gothic', sans-serif; padding: 40px; border: 1px solid #ddd; background: white; color: #333; }
-        .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; }
+        .header { border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; margin-bottom: 30px; }
         .title { font-size: 28px; font-weight: bold; color: #1E3A8A; }
         .meta { font-size: 14px; color: #666; margin-top: 5px; }
-        .section { margin-top: 30px; margin-bottom: 20px; }
-        .section-title { font-size: 20px; font-weight: bold; border-left: 5px solid #1E3A8A; padding-left: 10px; margin-bottom: 15px; }
-        .kpi-box { display: flex; justify-content: space-between; background: #F3F4F6; padding: 20px; border-radius: 10px; }
-        .kpi-item { text-align: center; }
-        .kpi-value { font-size: 24px; font-weight: bold; color: #1E3A8A; }
-        .kpi-label { font-size: 14px; color: #555; }
-        .content { line-height: 1.6; font-size: 16px; white-space: pre-line; }
+        
+        .section-title { font-size: 20px; font-weight: bold; border-left: 5px solid #1E3A8A; padding-left: 10px; margin-top: 30px; margin-bottom: 15px; }
+        
+        .kpi-box { display: flex; justify-content: space-between; background: #F3F4F6; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .kpi-item { text-align: center; flex: 1; }
+        .kpi-value { font-size: 22px; font-weight: bold; color: #1E3A8A; }
+        .kpi-label { font-size: 13px; color: #555; margin-top: 5px; }
+        
+        /* 테이블 디자인 (핵심 수정) */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+        th { background-color: #f0f2f5; font-weight: bold; color: #333; }
+        
+        .content { line-height: 1.6; font-size: 15px; }
         .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
     </style>
     """
     
-    # 본문 조립
     html += f"<div class='report-container'>"
     html += f"<div class='header'><div class='title'>부동산 개발 타당성 분석 보고서</div>"
     html += f"<div class='meta'>분석 일자: {today} | 작성: 지상 AI 시스템</div></div>"
     
-    # 1. 사업 개요
-    html += f"<div class='section'><div class='section-title'>1. 사업 개요</div>"
-    html += f"<ul><li><b>주소:</b> {addr}</li><li><b>용도:</b> {purp}</li>"
-    html += f"<li><b>면적:</b> {area}평</li><li><b>예산:</b> {bdgt}억 원</li></ul></div>"
-    
-    # 2. 투자 지표 (KPI)
-    html += f"<div class='section'><div class='section-title'>2. 투자 수익성 지표</div>"
+    # 요약 섹션
+    html += f"<div class='section-title'>1. 사업 개요 및 투자 지표</div>"
     html += f"<div class='kpi-box'>"
     html += f"<div class='kpi-item'><div class='kpi-value'>{metrics['unit_cost']}만</div><div class='kpi-label'>평당 건축비</div></div>"
     html += f"<div class='kpi-item'><div class='kpi-value'>{metrics['total_cost']}억</div><div class='kpi-label'>총 소요 비용</div></div>"
     
-    # 자금 상태 색상 처리
     color = "red" if metrics['balance'] < 0 else "green"
     html += f"<div class='kpi-item'><div class='kpi-value' style='color:{color}'>{metrics['balance']}억</div><div class='kpi-label'>자금 과부족</div></div>"
-    html += f"</div></div>"
+    html += f"</div>"
     
-    # 3. AI 상세 분석
-    html += f"<div class='section'><div class='section-title'>3. 전문가 심층 분석</div>"
-    html += f"<div class='content'>{ai_text}</div></div>"
+    html += f"<ul><li><b>주소:</b> {addr}</li><li><b>용도:</b> {purp}</li>"
+    html += f"<li><b>면적:</b> {area}평</li><li><b>예산:</b> {bdgt}억 원</li></ul>"
     
-    html += f"<div class='footer'>본 보고서는 AI 분석 결과이며 법적 효력은 없습니다. | Powered by Jisang AI</div>"
-    html += "</div>"
+    # AI 내용
+    html += f"<div class='section-title'>2. 전문가 심층 분석</div>"
+    # AI가 준 HTML 텍스트를 그대로 삽입
+    html += f"<div class='content'>{ai_text}</div>"
+    
+    html += f"<div class='footer'>Powered by Jisang AI | 본 보고서는 참고용입니다.</div></div>"
     
     return html
 
@@ -120,15 +122,23 @@ with st.sidebar:
         if not key:
             st.error("API 키 없음")
         else:
-            with st.spinner("분석 중..."):
-                # 1차 계산
+            with st.spinner("AI가 분석 중..."):
                 m = calculate_metrics(area, budget, purpose)
                 st.session_state['metrics'] = m
                 
-                # 2차 AI
-                prompt = f"주소:{address}, 용도:{purpose}, 면적:{area}평, 예산:{budget}억.\n"
-                prompt += f"계산결과: 평당{m['unit_cost']}만, 총비용{m['total_cost']}억, 잔액{m['balance']}억.\n"
-                prompt += "이 정보를 바탕으로 아주 구체적인 개발 보고서를 작성해줘."
+                # [핵심 수정] 프롬프트: 마크다운 금지, HTML 태그 사용 강제
+                prompt = f"""
+                당신은 부동산 개발 전문가입니다. 아래 정보를 바탕으로 보고서를 작성하세요.
+                주소:{address}, 용도:{purpose}, 면적:{area}평, 예산:{budget}억.
+                (계산결과: 평당{m['unit_cost']}만, 총비용{m['total_cost']}억, 잔액{m['balance']}억)
+                
+                [작성 규칙 - 매우 중요]
+                1. 출력 형식은 반드시 **순수 HTML 태그**만 사용하세요.
+                2. 제목은 <h3> 태그, 본문은 <p> 태그, 리스트는 <ul><li> 태그를 사용하세요.
+                3. 중요한 수치는 <table> 태그를 사용하여 깔끔한 표로 만드세요.
+                4. **주의:** 마크다운 문법(##, **, |표|)은 절대 사용하지 마세요. 화면에 깨져서 나옵니다.
+                5. 입지 분석, 소요 예산 상세(표), 리스크, 결론 순서로 작성하세요.
+                """
                 
                 res = call_ai_model([("user", prompt)], key)
                 st.session_state['analysis_result'] = res
@@ -137,7 +147,6 @@ with st.sidebar:
 if st.session_state['analysis_result']:
     m = st.session_state['metrics']
     
-    # 대시보드 표시
     st.subheader("📊 투자 타당성 대시보드")
     c1, c2, c3 = st.columns(3)
     c1.metric("총 소요 예산", f"{m['total_cost']}억")
@@ -145,30 +154,24 @@ if st.session_state['analysis_result']:
     c3.metric("종합 판정", m['status'])
     st.divider()
     
-    # 탭 구성
-    t1, t2 = st.tabs(["📄 프리미엄 보고서 (인쇄용)", "💬 AI 대화"])
+    t1, t2 = st.tabs(["📄 프리미엄 보고서 (완성본)", "💬 AI 대화"])
     
     with t1:
-        st.success("✅ 분석이 완료되었습니다. 아래 보고서를 확인하세요.")
-        
-        # HTML 보고서 생성
+        st.success("✅ 출력 형식 최적화 완료 (HTML 렌더링 적용)")
         html_report = create_html_report(address, purpose, area, budget, m, st.session_state['analysis_result'])
-        
-        # 화면에 렌더링 (스크롤 박스 안에)
         st.components.v1.html(html_report, height=800, scrolling=True)
-        
-        # [팁] 인쇄 방법 안내
-        st.info("💡 **팁:** 보고서 영역에 마우스를 대고 [우클릭] -> [인쇄] -> [PDF로 저장]을 선택하면 깔끔한 PDF 파일을 얻을 수 있습니다.")
 
     with t2:
         for r, t in st.session_state['chat_history']:
             if r != "system":
+                # 채팅창에는 마크다운이 어울리므로 그대로 둠 (단, AI가 HTML을 줄 수도 있음)
                 with st.chat_message(r): st.write(t)
         
         if q := st.chat_input("질문 입력"):
             key = st.secrets.get("GOOGLE_API_KEY", "").strip()
             with st.chat_message("user"): st.write(q)
-            # 대화 맥락 유지 (이전 로그 + 새 질문)
             msgs = st.session_state['chat_history'] + [("user", q)]
             ans = call_ai_model(msgs, key)
             with st.chat_message("assistant"): st.write(ans)
+            st.session_state['chat_history'].append(("user", q))
+            st.session_state['chat_history'].append(("assistant", ans))
