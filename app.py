@@ -1,146 +1,208 @@
 import streamlit as st
+import pandas as pd
+import time
+import textwrap
+import urllib.parse
 from datetime import datetime
 
 # 1. 페이지 설정
-st.set_page_config(page_title="지상 AI Pro v15.3", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="지상 AI Pro v17.0", layout="wide", page_icon="🏗️")
 
-# 2. CSS: 인쇄 및 화면 스타일링 (A4 최적화)
+# 2. 통합 CSS (채팅창 + 리포트 + 뱃지)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
-    
     html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
     
-    /* 화면용 컨테이너 */
-    .report-wrapper {
-        background: white;
-        padding: 40px;
-        margin: 0 auto;
-        max-width: 210mm;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    }
-
-    /* 스타일 정의 */
-    .r-header { border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
-    .r-title { font-size: 34px; font-weight: 900; color: #1e3a8a; margin: 0; }
-    .r-sub { font-size: 16px; color: #475569; margin-top: 5px; }
-    .r-meta { font-size: 12px; color: #94a3b8; text-align: right; line-height: 1.5; }
+    /* 챗봇 스타일 */
+    .chat-row { padding: 10px; border-radius: 10px; margin-bottom: 10px; }
+    .chat-user { background: #e0f2fe; text-align: right; margin-left: 20%; }
+    .chat-ai { background: #f1f5f9; text-align: left; margin-right: 20%; }
     
-    .r-section { margin-bottom: 35px; }
-    .r-head { font-size: 20px; font-weight: 800; color: #334155; border-left: 5px solid #1e3a8a; padding-left: 12px; margin-bottom: 15px; }
+    /* 리포트 스타일 (Ver 15.3 계승) */
+    .report-wrapper { background: white; padding: 40px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+    .r-header { border-bottom: 2px solid #1e3a8a; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .r-title { font-size: 28px; font-weight: 900; color: #1e3a8a; margin: 0; }
+    .r-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .r-table th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px; font-weight: 700; text-align: center; width: 18%; }
+    .r-table td { border: 1px solid #e2e8f0; padding: 8px; color: #333; }
     
-    .r-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .r-table th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; font-weight: 700; color: #475569; width: 18%; text-align: center; }
-    .r-table td { border: 1px solid #e2e8f0; padding: 10px; color: #1e293b; }
-
-    .highlight-box { background: #eff6ff; border: 1px solid #dbeafe; border-radius: 8px; padding: 25px; display: flex; align-items: center; justify-content: space-between; }
-    .score-area { text-align: center; min-width: 140px; }
-    .score-val { font-size: 48px; font-weight: 900; color: #1d4ed8; line-height: 1; }
-    .score-label { font-size: 14px; color: #64748b; margin-bottom: 5px; }
-    .analysis-text { padding-left: 30px; border-left: 2px solid #bfdbfe; font-size: 15px; line-height: 1.6; color: #334155; }
-
+    /* 뱃지 */
     .bdg { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
     .bdg-ok { background: #dcfce7; color: #15803d; }
     .bdg-no { background: #fee2e2; color: #b91c1c; }
-    .bdg-warn { background: #fef9c3; color: #a16207; }
-
-    /* 인쇄 모드 숨김 처리 */
+    
     @media print {
-        .stSidebar, header, footer, .no-print { display: none !important; }
-        .report-wrapper { box-shadow: none; border: none; padding: 0; margin: 0; width: 100%; max-width: 100%; }
-        body { margin: 0; -webkit-print-color-adjust: exact; }
+        .stSidebar, .stButton, .stChatInput, header, footer, .no-print, .stTabs { display: none !important; }
+        .report-wrapper { border: none; padding: 0; margin: 0; width: 100%; }
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 데이터 ---
-DATA = {
-    "메타": {"분석일": datetime.now().strftime("%Y-%m-%d"), "문서번호": "JA-2026-0015"},
-    "주소": "경기도 김포시 통진읍 도사리 163-1",
-    "토지": {
-        "지목": "임야(현황 대지)", "면적": "2,592㎡ (784평)", "공시지가": "270,000원/㎡",
-        "용도지역": "자연녹지지역", "규제": ["성장관리계획구역(복합형)", "가축사육제한구역"]
+st.title("🏗️ 지상 AI: 초격차 부동산 통합 솔루션")
+st.caption("Ver 17.0 - Map, Kakao, Chatbot & Report Total Package")
+
+# 세션 초기화
+if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
+if 'final_results' not in st.session_state: st.session_state['final_results'] = None
+
+# --- [Core] 데이터 엔진 (Mock API) ---
+INTEGRITY_DB = {
+    "도사리 163-1": {
+        "토지": {"면적": "2,592㎡", "지목": "임야(현황 대지)", "공시지가": "270,000원", "용도지역": "자연녹지지역", "규제": ["성장관리계획구역"]},
+        "건축물": {"주용도": "노유자시설", "규모": "지하1/지상3", "승강기": "유", "위반여부": False},
+        "권리": {"소유자": "김지상", "채권": "15억(우리은행)", "리스크": "대환대출 유망"},
+        "좌표": [37.689, 126.589]
     },
-    "건축물": {
-        "주용도": "노유자시설(요양원)", "구조": "철근콘크리트", "규모": "지하1층 / 지상3층",
-        "승강기": "유(15인승)", "주차": "12대(법정충족)", "위반여부": False
+    "성동리 100": {
+        "토지": {"면적": "495㎡", "지목": "대", "공시지가": "890,000원", "용도지역": "계획관리지역", "규제": ["역사문화보존지역"]},
+        "건축물": {"주용도": "단독주택", "규모": "지상2층", "승강기": "무", "위반여부": True},
+        "권리": {"소유자": "박건축", "채권": "없음", "리스크": "권리관계 깨끗함"},
+        "좌표": [37.785, 126.695]
     },
-    "권리": {
-        "소유자": "김지상(개인)", "채권": "15억(우리은행)", 
-        "리스크": "근저당 설정 후 2년 경과 (금리 인하 대환 유망)"
-    },
-    "AI": {"점수": 85, "수익률": "15.2%", "가치": "42.5억"}
+    "상방리 55": {
+        "토지": {"면적": "990㎡", "지목": "잡종지", "공시지가": "150,000원", "용도지역": "보전관리지역", "규제": ["접도구역"]},
+        "건축물": {"주용도": "창고시설", "규모": "지상1층", "승강기": "무", "위반여부": False},
+        "권리": {"소유자": "이물류", "채권": "5억(새마을금고)", "리스크": "2금융권 고금리"},
+        "좌표": [37.605, 126.450]
+    }
 }
 
-# --- [핵심 수정] HTML 조립 엔진 (공백 제거) ---
-def create_html(d):
+# --- 로직 함수 ---
+
+def analyze_batch_item(row):
+    addr_key = next((k for k in INTEGRITY_DB if k in row['주소']), None)
+    data = INTEGRITY_DB.get(addr_key, {
+        "토지": {"면적": "-", "용도지역": "확인불가", "규제": []},
+        "건축물": {"주용도": "-", "위반여부": False},
+        "권리": {"채권": "-", "리스크": "정보 없음"},
+        "좌표": [37.5665, 126.9780]
+    })
+    
+    budget = row['예산']
+    total_cost = (row['면적'] * 800 / 10000) * 1.2
+    balance = budget - total_cost
+    roi = 15.2 if balance >= 0 else 3.5
+    score = 80 - (30 if data['건축물']['위반여부'] else 0) + (10 if balance >= 0 else -10)
+    
+    return {"주소": row['주소'], "용도": row['용도'], "점수": score, "ROI": roi, "비용": round(total_cost, 2), "데이터": data}
+
+def create_report_html(item):
+    d = item['데이터']
     b_stat = "<span class='bdg bdg-ok'>적법</span>" if not d['건축물']['위반여부'] else "<span class='bdg bdg-no'>위반건축물</span>"
-    
-    # 리스트로 쪼개서 합치는 방식 -> 불필요한 공백/들여쓰기 완전 차단
-    html_parts = [
+    parts = [
         '<div class="report-wrapper">',
-        
-        # 1. 헤더
         '<div class="r-header">',
-        '<div>',
-        '<div class="r-title">부동산 종합 분석 보고서</div>',
-        f'<div class="r-sub">Target: {d["주소"]}</div>',
+        f'<div><div class="r-title">부동산 가치 분석 보고서</div><div>Target: {item["주소"]}</div></div>',
+        f'<div style="text-align:right; font-size:11px;">DATE: {datetime.now().strftime("%Y-%m-%d")}<br>REF: JA-BIZ-{int(time.time())}</div>',
         '</div>',
-        '<div class="r-meta">',
-        f'DATE: {d["메타"]["분석일"]}<br>BY: 지상 AI Pro<br>REF: {d["메타"]["문서번호"]}',
-        '</div></div>',
-
-        # 2. AI 요약
-        '<div class="r-section"><div class="highlight-box">',
-        '<div class="score-area">',
-        '<div class="score-label">종합 투자 점수</div>',
-        f'<div class="score-val">{d["AI"]["점수"]}</div>',
-        '</div>',
-        '<div class="analysis-text">',
-        f'<b>"금융 구조조정 시 수익률 {d["AI"]["수익률"]} 달성 가능"</b><br>',
-        f'본 물건은 <b>{d["토지"]["용도지역"]}</b> 내 위치한 <b>{d["건축물"]["주용도"]}</b>으로, 시설 활용도가 매우 우수합니다.',
-        f' 특히 <b>{d["권리"]["리스크"]}</b> 전략 실행 시 자산 가치는 <b>{d["AI"]["가치"]}</b>까지 상승할 것으로 분석됩니다.',
-        '</div></div></div>',
-
-        # 3. 토지 정보
-        '<div class="r-section">',
-        '<div class="r-head">📍 토지 정보 (Land Info)</div>',
+        f'<div style="background:#f1f5f9; padding:15px; border-radius:8px; margin-bottom:20px;">',
+        f'<div style="font-size:36px; font-weight:900; color:#1e3a8a;">{item["점수"]}점 <span style="font-size:16px;">(ROI {item["ROI"]}%)</span></div>',
+        f'<div style="margin-top:5px; font-size:13px;">💡 <b>AI 제안:</b> {d["권리"]["리스크"]}</div></div>',
         '<table class="r-table">',
-        f'<tr><th>소재지</th><td colspan="3">{d["주소"]}</td></tr>',
-        f'<tr><th>지목/면적</th><td>{d["토지"]["지목"]} / {d["토지"]["면적"]}</td><th>공시지가</th><td>{d["토지"]["공시지가"]}</td></tr>',
-        f'<tr><th>용도지역</th><td><span class="bdg bdg-warn">{d["토지"]["용도지역"]}</span></td><th>기타규제</th><td>{", ".join(d["토지"]["규제"])}</td></tr>',
-        '</table></div>',
-
-        # 4. 건축물 정보
-        '<div class="r-section">',
-        '<div class="r-head">🏢 건축물 정보 (Building Spec)</div>',
-        '<table class="r-table">',
-        f'<tr><th>주용도</th><td>{d["건축물"]["주용도"]}</td><th>법적상태</th><td>{b_stat}</td></tr>',
-        f'<tr><th>규모/구조</th><td>{d["건축물"]["규모"]} ({d["건축물"]["구조"]})</td><th>승강기</th><td>{d["건축물"]["승강기"]}</td></tr>',
-        f'<tr><th>주차대수</th><td colspan="3">{d["건축물"]["주차"]}</td></tr>',
-        '</table></div>',
-
-        # 5. 권리 분석
-        '<div class="r-section">',
-        '<div class="r-head">⚖️ 권리 및 금융 (Ownership)</div>',
-        '<table class="r-table">',
+        f'<tr><th>면적/지목</th><td>{d["토지"]["면적"]} / {d["토지"]["지목"]}</td><th>공시지가</th><td>{d["토지"]["공시지가"]}</td></tr>',
+        f'<tr><th>용도지역</th><td>{d["토지"]["용도지역"]}</td><th>규제사항</th><td>{", ".join(d["토지"]["규제"])}</td></tr>',
+        f'<tr><th>건물용도</th><td>{d["건축물"]["주용도"]}</td><th>위반여부</th><td>{b_stat}</td></tr>',
         f'<tr><th>소유자</th><td>{d["권리"]["소유자"]}</td><th>채권최고액</th><td>{d["권리"]["채권"]}</td></tr>',
-        f'<tr><th>AI 제안</th><td colspan="3" style="color:#b91c1c; font-weight:bold;">💡 {d["권리"]["리스크"]}</td></tr>',
-        '</table></div>',
-
-        '<div style="text-align:center; font-size:11px; color:#cbd5e1; margin-top:50px;">Powered by Jisang AI | Data Integrity Verified</div>',
-        '</div>'
+        '</table></div>'
     ]
-    
-    return "".join(html_parts)
+    return "".join(parts)
 
-# --- 메인 실행 ---
+# [카카오톡 공유 링크 생성]
+def get_kakao_link(item):
+    text = f"[지상AI] {item['주소']} 분석 결과\n점수: {item['점수']}점\nROI: {item['ROI']}%\n리스크: {item['데이터']['권리']['리스크']}"
+    encoded_text = urllib.parse.quote(text)
+    return f"https://sharer.kakao.com/talk/friends/picker/link?url=https://jisang-ai.streamlit.app&text={encoded_text}"
+
+# --- UI 레이아웃 ---
 
 with st.sidebar:
-    st.title("🖨️ 출력 센터")
-    st.success("렌더링 엔진 무결성 확보됨")
-    st.info("이제 [Ctrl + P]를 누르면 완벽한 보고서가 출력됩니다.")
+    st.header("🏢 분석 센터")
+    if st.button("📂 투자 후보지 샘플 로드"):
+        st.session_state['input_df'] = pd.DataFrame({
+            '주소': ['김포시 통진읍 도사리 163-1', '파주시 탄현면 성동리 100', '강화군 화도면 상방리 55'],
+            '용도': ['요양원', '전원주택', '물류창고'], '면적': [100, 150, 300], '예산': [15, 12, 18]
+        })
+    
+    if 'input_df' in st.session_state:
+        if st.button("🚀 초격차 원클릭 분석", type="primary"):
+            results = []
+            bar = st.progress(0)
+            for i, row in st.session_state['input_df'].iterrows():
+                res = analyze_batch_item(row)
+                time.sleep(0.3)
+                results.append(res)
+                bar.progress((i+1)/len(st.session_state['input_df']))
+            st.session_state['final_results'] = pd.DataFrame(results).sort_values("점수", ascending=False)
+            st.success("분석 완료!")
 
-# HTML 렌더링 (공백 없는 순수 HTML 문자열 주입)
-st.markdown(create_html(DATA), unsafe_allow_html=True)
+# --- 메인 화면 (탭 구성) ---
+
+if st.session_state['final_results'] is not None:
+    df = st.session_state['final_results']
+    
+    # 탭으로 기능 분리 (UX 최적화)
+    tab1, tab2, tab3 = st.tabs(["📊 분석 대시보드", "🤖 AI 부동산 상담", "🖨️ 리포트 다운로드"])
+    
+    # [Tab 1] 분석 결과 & 지도 & 카카오톡
+    with tab1:
+        st.subheader("🥇 Deal Sourcing 랭킹")
+        st.bar_chart(df.set_index('주소')['점수'], horizontal=True, color='#1e3a8a')
+        
+        for i, row in df.iterrows():
+            d = row['데이터']
+            with st.expander(f"[{row['점수']}점] {row['주소']} - {d['토지']['용도지역']}"):
+                c1, c2 = st.columns([1.5, 1])
+                with c1:
+                    st.info(f"💰 예상비용: {row['비용']}억 | ROI: {row['ROI']}%")
+                    if d['건축물']['위반여부']: st.error("🚨 위반건축물 (주의)")
+                    
+                    st.write("---")
+                    # [카카오톡 & 지도 연동]
+                    k_col, n_col, daum_col = st.columns(3)
+                    k_col.link_button("💬 카톡 공유", get_kakao_link(row))
+                    
+                    # 한글 주소 인코딩
+                    enc_addr = urllib.parse.quote(row['주소'])
+                    n_col.link_button("📍 네이버 지도", f"https://map.naver.com/v5/search/{enc_addr}")
+                    daum_col.link_button("📍 카카오 맵", f"https://map.kakao.com/link/search/{enc_addr}")
+
+                with c2:
+                    st.map(pd.DataFrame({'lat': [d['좌표'][0]], 'lon': [d['좌표'][1]]}), zoom=14)
+
+    # [Tab 2] AI 부동산 상담봇 (Consultant)
+    with tab2:
+        st.subheader("🤖 지상 AI 부동산 파트너")
+        st.info("분석된 토지에 대해 무엇이든 물어보세요. (예: 도사리 땅에 카페 해도 돼?)")
+        
+        # 채팅 기록 표시
+        for msg in st.session_state['chat_history']:
+            role_class = "chat-user" if msg["role"] == "user" else "chat-ai"
+            st.markdown(f"<div class='chat-row {role_class}'>{msg['content']}</div>", unsafe_allow_html=True)
+
+        # 채팅 입력
+        if prompt := st.chat_input("질문을 입력하세요..."):
+            st.session_state['chat_history'].append({"role": "user", "content": prompt})
+            st.markdown(f"<div class='chat-row chat-user'>{prompt}</div>", unsafe_allow_html=True)
+            
+            # AI 답변 시뮬레이션 (분석 데이터 기반)
+            top_pick = df.iloc[0]
+            answer = f"네, 분석된 **{top_pick['주소']}** ({top_pick['데이터']['토지']['용도지역']})를 기준으로 답변드립니다. 해당 지역은 {top_pick['데이터']['권리']['리스크']} 상황이므로, 대환 대출을 먼저 해결하시면 개발 수익성이 {top_pick['ROI']}%까지 개선될 수 있습니다."
+            
+            time.sleep(1)
+            st.session_state['chat_history'].append({"role": "assistant", "content": answer})
+            st.rerun()
+
+    # [Tab 3] 리포트 다운로드 (A4 인쇄)
+    with tab3:
+        st.subheader("🖨️ 보고서 출력 센터")
+        st.warning("아래 버튼을 누르면 인쇄용 뷰가 펼쳐집니다. [Ctrl + P]로 PDF 저장하세요.")
+        
+        if st.checkbox("📄 전체 리포트 뷰어 열기"):
+            full_html = ""
+            for i, row in df.iterrows():
+                full_html += create_report_html(row)
+            st.markdown(full_html, unsafe_allow_html=True)
+
+else:
+    st.info("👈 사이드바에서 [엑셀 로드] 후 분석을 시작하세요.")
