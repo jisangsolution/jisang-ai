@@ -1,56 +1,74 @@
 import streamlit as st
 import requests
+import json
+import pandas as pd
 
-st.set_page_config(page_title="지상 AI 최종 진단", page_icon="🕵️", layout="wide")
-st.title("🕵️ 지상 AI: 구글 서버 직통 진단")
+# 1. 페이지 설정
+st.set_page_config(page_title="지상 AI (Next Gen)", page_icon="🏗️", layout="wide")
+st.title("🏗️ 지상 AI 부동산 분석 시스템")
+st.caption("Powered by Google Gemini 2.0 Flash (Next Gen)")
 
-# 1. API 키 확인
-api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
-
-if not api_key:
-    st.error("⚠️ API 키가 없습니다.")
-    st.stop()
-
-# 키 일부만 보여주기 (보안)
-st.info(f"🔑 적용된 키: `{api_key[:4]}...{api_key[-4:]}`")
-
-# 2. 구글 서버에 '사용 가능한 모델 목록' 직접 요청 (라이브러리 미사용)
-url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-
-if st.button("🚀 서버 상태 확인 (클릭)", type="primary"):
-    try:
-        response = requests.get(url)
-        data = response.json()
-        
-        st.divider()
-        st.subheader("📡 구글 서버 응답 원문")
-        
-        # 3. 결과 분석
-        if response.status_code == 200:
-            # 성공 시: 모델 목록 출력
-            if "models" in data:
-                models = [m['name'] for m in data['models']]
-                st.success("✅ **연결 성공!** 사용 가능한 모델 목록:")
-                st.code(models)
-                st.balloons()
-            else:
-                st.warning("⚠️ 연결은 됐는데, 사용 가능한 모델이 하나도 없습니다. (프로젝트 설정 문제)")
-                st.json(data)
-        else:
-            # 실패 시: 정확한 에러 메시지 출력
-            st.error(f"❌ **서버 거절 (코드 {response.status_code})**")
-            st.error("구글이 보낸 거절 사유:")
-            st.json(data) # 여기에 진짜 이유가 나옵니다.
+# 2. 분석 함수 (지창배님의 슈퍼 계정 전용 모델 사용)
+def run_analysis(address, api_key):
+    # [핵심] 지창배님의 목록에 있던 'gemini-2.0-flash' 모델 사용
+    # 이 모델은 속도가 매우 빠르고 분석력이 뛰어납니다.
+    model_name = "gemini-2.0-flash"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{
+            "parts": [{"text": f"""
+            당신은 20년 경력의 한국 부동산 개발 전문가입니다.
+            대상지: '{address}'
             
-            # 4. 자주 발생하는 원인 해설
-            if "User location is not supported" in str(data):
-                st.warning("👉 원인: 현재 접속한 국가(IP)에서 API를 차단 중입니다.")
-            elif "API key not valid" in str(data):
-                st.warning("👉 원인: 키가 틀렸거나 삭제되었습니다.")
-            elif "billing" in str(data).lower():
-                st.warning("👉 원인: **결제 계정 연동 필요** (무료 티어라도 카드 등록이 필요할 수 있습니다).")
-            elif "has not enabled" in str(data):
-                st.warning("👉 원인: API가 아직 활성화되지 않았습니다.")
-
+            이 땅에 '요양원' 또는 '전원주택'을 개발한다고 가정할 때, 다음 내용을 포함한 심층 분석 보고서를 작성해주세요:
+            1. 입지 분석 (교통, 접근성, 주변 환경)
+            2. 법적 규제 및 인허가 리스크 점검
+            3. 사업성 분석 (어떤 시설이 더 수익성이 높은지 추천)
+            4. 결론 및 제안
+            
+            전문적인 톤으로, 중요 내용은 볼드체로 강조해서 써주세요.
+            """}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"❌ 오류 발생 ({response.status_code}):\n{response.text}"
+            
     except Exception as e:
-        st.error(f"통신 오류: {e}")
+        return f"❌ 시스템 통신 오류: {str(e)}"
+
+# 3. 화면 구성
+with st.sidebar:
+    st.header("📍 분석 설정")
+    input_addr = st.text_input("주소 입력", value="경기도 김포시 통진읍 도사리 163-1")
+    run_btn = st.button("🚀 차세대 AI 분석 시작", type="primary")
+
+# 4. 실행 로직
+if run_btn:
+    api_key = st.secrets.get("GOOGLE_API_KEY", "").strip()
+    
+    if not api_key:
+        st.error("⚠️ API 키가 없습니다. Settings > Secrets를 확인하세요.")
+    else:
+        st.divider()
+        st.subheader(f"📄 AI 개발 전략 보고서: {input_addr}")
+        
+        # 지도 시각화
+        st.map(pd.DataFrame({'lat': [37.689], 'lon': [126.589]}), zoom=13)
+        
+        with st.spinner("🤖 Gemini 2.0 AI가 최신 데이터를 분석 중입니다..."):
+            result = run_analysis(input_addr, api_key)
+            
+            if "❌" in result:
+                st.error(result)
+            else:
+                st.success("분석 완료!")
+                st.markdown(result)
