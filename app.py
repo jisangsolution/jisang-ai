@@ -9,7 +9,7 @@ from datetime import datetime
 # 1. 페이지 설정
 st.set_page_config(page_title="지상 AI Pro", layout="wide", page_icon="🏢")
 st.title("🏢 지상 AI: 부동산 개발 타당성 & Deal Sourcing")
-st.caption("Ver 9.3 - Auto Retry & Rate Limit Handler")
+st.caption("Ver 9.4 - Safety First & Exponential Backoff")
 
 # 세션 초기화
 if 'analysis_result' not in st.session_state: st.session_state['analysis_result'] = None
@@ -33,7 +33,7 @@ def calculate_metrics(area, budget, purpose):
         "status": "여유" if balance >= 0 else "부족"
     }
 
-# [Ver 9.3 핵심] 오토 리트라이 (재시도) 로직 탑재
+# [Ver 9.4 핵심] 지수적 백오프 (점점 더 오래 기다리기)
 def call_ai_model(messages, api_key):
     base = "https://generativelanguage.googleapis.com/v1beta/models"
     model = "gemini-flash-latest"
@@ -46,34 +46,35 @@ def call_ai_model(messages, api_key):
     payload = {"contents": contents}
     headers = {'Content-Type': 'application/json'}
     
-    # 최대 3번까지 재시도
-    max_retries = 3
-    for attempt in range(max_retries):
+    # 1차 시도 -> 실패시 10초 대기 -> 실패시 30초 대기
+    wait_times = [10, 30, 60] 
+    
+    for i, wait in enumerate(wait_times):
         try:
             res = requests.post(url, headers=headers, json=payload)
-            
             if res.status_code == 200:
                 return res.json()['candidates'][0]['content']['parts'][0]['text']
             elif res.status_code == 429:
-                # 429 에러(속도제한) 발생 시 대기 후 재시도
-                time.sleep(5) 
+                # 429 에러는 '잠시 멈춤' 신호 -> 길게 대기
+                time.sleep(wait) 
                 continue 
             else:
-                return f"Error {res.status_code}: {res.text}"
-        except Exception as e:
-            return f"Sys Error: {str(e)}"
+                return None
+        except:
+            time.sleep(wait)
+            continue
             
-    return "❌ AI 응답 실패 (접속량 폭주)"
+    return None # 3번 다 실패하면 None 반환
 
 def extract_data(full_text):
     default_scores = {"입지": 0, "수요": 0, "수익성": 0, "안정성": 0, "총점": 0}
-    if not full_text or "Error" in full_text: return default_scores, full_text
+    if not full_text: return default_scores, ""
     
     html_content = full_text
     scores = default_scores.copy()
     
     try:
-        # 1. JSON 시도
+        # 1. JSON 파싱
         json_match = re.search(r"({.*?})", full_text, re.DOTALL)
         if json_match:
             try:
@@ -85,7 +86,7 @@ def extract_data(full_text):
                     return scores, html_content
             except: pass
 
-        # 2. 정규표현식 강제 추출
+        # 2. 강제 패턴 매칭 (하이브리드)
         patterns = {
             "총점": r"(총점|종합 점수|Total Score)\D*(\d+)",
             "입지": r"(입지)\D*(\d+)",
@@ -176,23 +177,20 @@ with st.sidebar:
                 raw_logs = []
                 df = st.session_state['upload_df']
                 bar = st.progress(0)
-                
-                status_text = st.empty()
+                status_box = st.empty() # 상태 메시지용 박스
                 
                 for idx, row in df.iterrows():
-                    status_text.text(f"분석 중 ({idx+1}/{len(df)}): {row['주소']} ... (AI 응답 대기)")
+                    status_box.info(f"⏳ 분석 중 ({idx+1}/{len(df)}): {row['주소']} ...")
                     
                     m = calculate_metrics(row['면적'], row['예산'], row['용도'])
-                    # 더 단순하고 강력한 프롬프트
                     prompt = f"""
                     부동산 심사역 역할.
                     주소:{row['주소']}, 용도:{row['용도']}, 예산:{row['예산']}억.
                     예상비용{m['total_cost']}억.
                     
-                    [매우 중요: 짧게 답변하세요]
-                    이 땅의 개발 타당성 점수(0~100)를 매기세요.
-                    형식: "총점: 85, 입지: 80, 수요: 90, 수익성: 80, 안정성: 90"
-                    설명은 필요 없습니다. 점수만 출력하세요.
+                    [필수] 투자 점수(0~100) 평가.
+                    답변 형식: "총점: 85, 입지: 80, 수요: 90, 수익성: 80, 안정성: 90"
+                    설명 생략. 점수만 출력.
                     """
                     res = call_ai_model([("user", prompt)], api_key)
                     
@@ -204,20 +202,22 @@ with st.sidebar:
                         grade = "S" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C"
                         raw_logs.append(f"[{row['주소']}] {res}")
                     else:
-                        raw_logs.append(f"[{row['주소']}] 응답 없음 (Error)")
+                        raw_logs.append(f"[{row['주소']}] ❌ 3회 재시도 실패 (과부하)")
                     
                     results.append({
                         "주소": row['주소'],
                         "총점": score,
                         "등급": grade,
                         "예상비용": f"{m['total_cost']}억",
-                        "자금상태": m['status']
+                        "상태": m['status']
                     })
-                    # 안전을 위해 기본 대기 3초 (무료 계정 보호)
-                    time.sleep(3)
+                    
+                    # [안전 장치] 과부하 방지를 위한 강제 휴식
+                    status_box.warning(f"⚠️ API 과부하 방지를 위해 10초간 대기합니다...")
+                    time.sleep(10) # 10초 대기
                     bar.progress((idx + 1) / len(df))
                 
-                status_text.text("모든 분석이 완료되었습니다!")
+                status_box.success("모든 분석이 완료되었습니다!")
                 st.session_state['bulk_results'] = pd.DataFrame(results).sort_values(by="총점", ascending=False)
                 st.session_state['logs'] = raw_logs
                 st.success("완료!")
@@ -234,7 +234,7 @@ if mode == "단일 분석":
         html = create_html_report(address, purpose, area, budget, st.session_state['metrics'], st.session_state['analysis_result'], s)
         st.components.v1.html(html, height=800, scrolling=True)
 
-else: # 대량 분석 결과
+else: 
     if st.session_state['bulk_results'] is not None:
         st.divider()
         st.subheader("🥇 랭킹 (Top Picks)")
