@@ -78,7 +78,7 @@ if run_btn:
         st.divider()
         st.subheader(f"📊 {purpose} 개발 전략 보고서")
         
-        # 지도 바로가기 버튼 (편의 기능)
+        # 지도 바로가기 버튼
         col1, col2 = st.columns(2)
         with col1:
             st.link_button("🗺️ 네이버 지도로 보기", f"https://map.naver.com/v5/search/{address}")
