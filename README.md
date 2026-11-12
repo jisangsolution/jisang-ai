@@ -1,14 +1,14 @@
 # jisang-ai
 
-Áö»ó¼Ö·ç¼Ç AI »ó´ã¡¤´ë½Ãº¸µå ¾Û - Streamlit
+ì§€ìƒì†”ë£¨ì…˜ AI ìƒë‹´Â·ëŒ€ì‹œë³´ë“œ ì•± - Streamlit
 
-## ½ÇÇà
+## ì‹¤í–‰
 
     pip install -r requirements.txt
     streamlit run app.py
 
-## ±¸Á¶
+## êµ¬ì¡°
 
-- app.py : ÇöÀç ¾²´Â ¸ŞÀÎ ¾Û, Ver 17.0
-- archive/legacy_2026-01/ : 2026-01 ÀÌÀü ½ºÅ©¸³Æ® 30°³¿Í agents, data, ÆùÆ® º¸°ü - »èÁ¦ÇÏÁö ¾ÊÀ½
-- API Å°´Â .env ¶Ç´Â .streamlit/secrets.toml ¿¡ µÎ°í GitHub¿¡ ¿Ã¸®Áö ¾ÊÀ½
+- app.py : í˜„ì¬ ì“°ëŠ” ë©”ì¸ ì•±, Ver 17.0
+- archive/legacy_2026-01/ : 2026-01 ì´ì „ ìŠ¤í¬ë¦½íŠ¸ 30ê°œì™€ agents, data, í°íŠ¸ ë³´ê´€ - ì‚­ì œí•˜ì§€ ì•ŠìŒ
+- API í‚¤ëŠ” .env ë˜ëŠ” .streamlit/secrets.toml ì— ë‘ê³  GitHubì— ì˜¬ë¦¬ì§€ ì•ŠìŒ
